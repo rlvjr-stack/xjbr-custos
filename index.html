@@ -12,7 +12,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Archivo:wght@400;500;600;700&family=Archivo+Narrow:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="config.js"></script>
 <style>
 :root{
   --paper:#F2EDE1; --paper2:#EAE3D2; --card:#FBF8F0;
@@ -746,20 +745,39 @@ let state={obras:[],lancamentos:[]}, role=null, editId=null, sel=new Set(), curF
 let rateioMode='igual', curRateio={}; // rateio manual: {obraId: valor}
 let obraFilter='ativas', archivingObraId=null, admLogoBase64='', viewObras=[], viewLancs=[];
 
+/* ---------- Config local (fallback offline / demo) ---------- */
+// DEMO ONLY -- usado quando /api/public-config está inacessível (preview
+// offline/local). Nenhum recurso real do backend é protegido por estes
+// valores; por isso SUPABASE_URL/ANON_KEY nunca entram aqui (modo LOCAL =
+// sem conexão ao Supabase).
+const LOCAL_FALLBACK_CONFIG = {
+  defaultTenant: 'mpi',
+  tenants: {
+    mpi: { nome:'MPI', fontes:['XJBR','MPI'], logo:null }
+  },
+  PASS_FINANCEIRO: 'classe7',
+  PASS_VIEWER: 'ver123',
+  DEV_PASS: 'dev-master'
+};
+
 /* ---------- Parceiro (tenant) pela URL ---------- */
-const cfg = window.C7_CONFIG || {};
-function resolveTenantSlug(){
+let TREG, TENANT, tcfg, FONTES, FA, FB, TNOME, IS_DEFAULT_TENANT, DEFAULT_TENANT;
+let sb, LOCAL, LS, PUBLIC_TENANTS={};
+const BUCKET = 'comprovantes';
+
+function resolveTenantSlug(defaultTenant){
   const qs=new URLSearchParams(location.search).get('t');
   if(qs) return qs.toLowerCase();
   if(location.protocol!=='file:'){
     const seg=location.pathname.split('/').filter(Boolean)[0];
     if(seg && !/\.(html?|js|css|json|png|jpg|svg)$/i.test(seg)) return seg.toLowerCase();
   }
-  return String(cfg.DEFAULT_TENANT||'mpi').toLowerCase();
+  return String(defaultTenant||'mpi').toLowerCase();
 }
-/* Registro de parceiros = config.js + ajustes feitos pelo Dev (localStorage) */
-function loadTenantRegistry(){
-  let reg = cfg.TENANTS ? JSON.parse(JSON.stringify(cfg.TENANTS)) : {};
+/* Registro de parceiros = /api/public-config + ajustes feitos pelo Dev (localStorage, modo LOCAL) */
+function loadTenantRegistry(publicTenants){
+  const base = publicTenants || PUBLIC_TENANTS;
+  let reg = base ? JSON.parse(JSON.stringify(base)) : {};
   try{
     const custom=JSON.parse(localStorage.getItem('xjbr_tenants_v1')||'{}');
     Object.keys(custom).forEach(k=>{ reg[k]=custom[k]; });
@@ -776,30 +794,46 @@ function saveTenantCustom(slug, def){
 function removeTenantReg(slug){
   let custom={}; try{custom=JSON.parse(localStorage.getItem('xjbr_tenants_v1')||'{}');}catch(e){}
   delete custom[slug]; localStorage.setItem('xjbr_tenants_v1',JSON.stringify(custom));
-  if(cfg.TENANTS && cfg.TENANTS[slug]){ let rem=[]; try{rem=JSON.parse(localStorage.getItem('xjbr_tenants_removed')||'[]');}catch(e){} if(!rem.includes(slug)){rem.push(slug); localStorage.setItem('xjbr_tenants_removed',JSON.stringify(rem));} }
+  if(PUBLIC_TENANTS[slug]){ let rem=[]; try{rem=JSON.parse(localStorage.getItem('xjbr_tenants_removed')||'[]');}catch(e){} if(!rem.includes(slug)){rem.push(slug); localStorage.setItem('xjbr_tenants_removed',JSON.stringify(rem));} }
 }
-const TREG = loadTenantRegistry();
-const TENANT = resolveTenantSlug();
-const tcfg = TREG[TENANT] || TREG[String(cfg.DEFAULT_TENANT||'mpi').toLowerCase()] || {};
-let FONTES, FA, FB;
-{ let _f; try{_f=JSON.parse(localStorage.getItem('c7_fontes_'+TENANT));}catch(e){}
-  const _def=(tcfg.fontes&&tcfg.fontes.length?tcfg.fontes:['XJBR','MPI']);
-  FONTES=(_f&&_f.length)?_f:_def;
-  FA=FONTES[0]||'XJBR'; FB=FONTES[1]||'MPI'; }
-const TNOME = tcfg.nome || TENANT.toUpperCase();
-const IS_DEFAULT_TENANT = TENANT === String(cfg.DEFAULT_TENANT||'mpi').toLowerCase();
 
-/* ---------- Modo: LOCAL (navegador) ou ONLINE (Supabase) ---------- */
-const configured = !!(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY
-  && !/SEU-PROJETO|SUA-CHAVE/.test(cfg.SUPABASE_URL + cfg.SUPABASE_ANON_KEY));
-const sb = (window.supabase && configured)
-  ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY)
-  : null;
-const LOCAL = !sb;                 // true = funciona neste navegador
-const BUCKET = 'comprovantes';
-const LS = 'xjbr_state_' + TENANT; // armazenamento local SEPARADO por parceiro
-const EMAIL_FIN  = 'financeiro@'  + TENANT + '.xjbr.local';   // contas internas (online)
-const EMAIL_VIEW = 'visualizador@' + TENANT + '.xjbr.local';
+/* ---------- Config remota (/api/public-config) + modo LOCAL/ONLINE ---------- */
+async function loadPublicConfig(){
+  try{
+    const res = await fetch('/api/public-config');
+    if(!res.ok) throw new Error('bad status');
+    const j = await res.json();
+    if(!j || !j.tenants) throw new Error('bad shape');
+    return j;
+  }catch(e){
+    return LOCAL_FALLBACK_CONFIG;
+  }
+}
+function setupTenantContext(cfgData){
+  DEFAULT_TENANT = String(cfgData.defaultTenant||'mpi').toLowerCase();
+  PUBLIC_TENANTS = cfgData.tenants || {};
+  TREG = loadTenantRegistry(PUBLIC_TENANTS);
+  TENANT = resolveTenantSlug(DEFAULT_TENANT);
+  tcfg = TREG[TENANT] || TREG[DEFAULT_TENANT] || {};
+  { let _f; try{_f=JSON.parse(localStorage.getItem('c7_fontes_'+TENANT));}catch(e){}
+    const _def=(tcfg.fontes&&tcfg.fontes.length?tcfg.fontes:['XJBR','MPI']);
+    FONTES=(_f&&_f.length)?_f:_def;
+    FA=FONTES[0]||'XJBR'; FB=FONTES[1]||'MPI'; }
+  TNOME = tcfg.nome || TENANT.toUpperCase();
+  IS_DEFAULT_TENANT = TENANT === DEFAULT_TENANT;
+
+  const configured = !!(cfgData.supabaseUrl && cfgData.supabaseAnonKey);
+  sb = (window.supabase && configured)
+    ? window.supabase.createClient(cfgData.supabaseUrl, cfgData.supabaseAnonKey)
+    : null;
+  LOCAL = !sb;                 // true = funciona neste navegador
+  LS = 'xjbr_state_' + TENANT; // armazenamento local SEPARADO por parceiro
+  if(LOCAL){
+    // senhas de demonstração (modo offline) — não protegem dado real algum
+    tcfg.PASS_FINANCEIRO = tcfg.PASS_FINANCEIRO || LOCAL_FALLBACK_CONFIG.PASS_FINANCEIRO;
+    tcfg.PASS_VIEWER = tcfg.PASS_VIEWER || LOCAL_FALLBACK_CONFIG.PASS_VIEWER;
+  }
+}
 
 function uid(){return 'id'+Math.random().toString(36).slice(2,9)}
 // Retorna o valor atribuído a uma obra num lançamento (rateio manual ou divisão igual)
@@ -1785,7 +1819,7 @@ async function doLogin(){
   err.textContent = '';
   if(LOCAL){
     if(!pwd){ err.textContent='Digite a senha.'; return; }
-    if(cfg.DEV_PASS && pwd===cfg.DEV_PASS){ role='dev'; }
+    if(LOCAL_FALLBACK_CONFIG.DEV_PASS && pwd===LOCAL_FALLBACK_CONFIG.DEV_PASS){ role='dev'; }
     else if(pwd===tcfg.PASS_FINANCEIRO){ role='financeiro'; }
     else if(pwd===tcfg.PASS_VIEWER){ role='viewer'; }
     else { err.textContent='Senha incorreta. Tente novamente.'; if(el) el.select(); return; }
@@ -1798,18 +1832,20 @@ async function doLogin(){
   const btn=document.querySelector('.auth-btn');
   if(btn){btn.disabled=true;btn.textContent='Entrando…';}
   try{
-    // Detecta o e-mail pela senha conhecida no config (evita múltiplas tentativas)
-    const byPwd =
-      (cfg.DEV_PASS && pwd===cfg.DEV_PASS)           ? ['dev@xjbr.local'] :
-      (tcfg.PASS_FINANCEIRO && pwd===tcfg.PASS_FINANCEIRO) ? [EMAIL_FIN] :
-      (tcfg.PASS_VIEWER && pwd===tcfg.PASS_VIEWER)   ? [EMAIL_VIEW] :
-      [EMAIL_FIN, EMAIL_VIEW, 'dev@xjbr.local'];
-    let ok=false;
-    for(const email of byPwd){
-      const res=await sb.auth.signInWithPassword({email,password:pwd});
-      if(!res.error){ ok=true; break; }
+    const res = await fetch('/api/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ tenant: TENANT, password: pwd })
+    });
+    const out = await res.json().catch(()=>({}));
+    if(!res.ok || out.error || !out.access_token){
+      err.textContent = (out && out.error) || 'Senha incorreta. Tente novamente.';
+      if(el) el.select();
+      return;
     }
-    if(!ok){ err.textContent='Senha incorreta. Tente novamente.'; if(el) el.select(); return; }
+    const { error: setErr } = await sb.auth.setSession({
+      access_token: out.access_token, refresh_token: out.refresh_token
+    });
+    if(setErr){ err.textContent='Erro ao iniciar sessão.'; return; }
     await startSession();
   } finally { if(btn){btn.disabled=false;btn.textContent='Entrar';} }
 }
@@ -1981,11 +2017,52 @@ function subscribeRealtime(){
 }
 
 /* ---------- Painel do Desenvolvedor (Dev / super-admin) ---------- */
-function openAdmin(){ if(role!=='dev'){toast('Apenas o Dev acessa o painel');return;} renderAdmin(); document.getElementById('ovAdmin').classList.add('show'); }
+async function openAdmin(){ if(role!=='dev'){toast('Apenas o Dev acessa o painel');return;} document.getElementById('ovAdmin').classList.add('show'); await renderAdmin(); }
 function closeAdmin(){ document.getElementById('ovAdmin').classList.remove('show'); }
 function tenantLocalCount(slug){ try{const d=JSON.parse(localStorage.getItem('xjbr_state_'+slug)||'{}'); return (d.lancamentos||[]).length;}catch(e){return 0;} }
 let _admEditSlug=null;
-function renderAdmin(){
+let _admTenantsCache=[];
+
+async function authHeader(){
+  if(LOCAL || !sb) return {};
+  const {data:{session}} = await sb.auth.getSession();
+  return session ? {Authorization:'Bearer '+session.access_token} : {};
+}
+
+function admFormHtml(){
+  const pfPlaceholder = LOCAL ? 'senha completa' : 'deixe em branco para não alterar';
+  const pvPlaceholder = LOCAL ? 'senha leitura'   : 'deixe em branco para não alterar';
+  return `<div class="row2">
+      <div class="field"><label>Chave (vai na URL) — só minúsculas/números</label><input id="admSlug" placeholder="ex.: construtorax"></div>
+      <div class="field"><label>Nome do cliente</label><input id="admNome" placeholder="ex.: Construtora X"></div>
+    </div>
+    <div class="field"><label>Logo</label>
+      <div style="display:flex;gap:18px;margin-bottom:8px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="admLogoType" id="admLogoTypeSigla" value="sigla" onchange="renderLogoInput()" checked> Sigla (texto)</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="admLogoType" id="admLogoTypeImage" value="image" onchange="renderLogoInput()"> Imagem</label>
+      </div>
+      <div id="logoInputArea"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Fonte pagadora 1</label><input id="admFA" placeholder="XJBR"></div>
+      <div class="field"><label>Fonte pagadora 2</label><input id="admFB" placeholder="MPI"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Senha Financeiro (edita)</label><input id="admPF" type="password" placeholder="${pfPlaceholder}"></div>
+      <div class="field"><label>Senha Visualizador (só lê)</label><input id="admPV" type="password" placeholder="${pvPlaceholder}"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-line" onclick="admFormReset()">Limpar</button>
+      <button class="btn btn-primary" onclick="adminSave()">＋ Salvar cliente</button>
+    </div>`;
+}
+
+async function renderAdmin(){
+  if(LOCAL){ renderAdminLocal(); return; }
+  await renderAdminOnline();
+}
+
+function renderAdminLocal(){
   const reg=loadTenantRegistry();
   const rows=Object.keys(reg).map(slug=>{
     const t=reg[slug]||{}; const fa=(t.fontes&&t.fontes[0])||'XJBR'; const fb=(t.fontes&&t.fontes[1])||'—';
@@ -2007,36 +2084,53 @@ function renderAdmin(){
   }).join('');
   document.getElementById('adminBody').innerHTML = `
     <p class="footnote" style="margin-bottom:8px">Gerencie todos os clientes — criar, editar, abrir, limpar dados ou remover.</p>
-    <p class="footnote" style="margin-bottom:12px;color:var(--danger)">⚠ As senhas ficam salvas em texto neste navegador. Em modo online, use autenticação Supabase.</p>
+    <p class="footnote" style="margin-bottom:12px;color:var(--danger)">⚠ Modo offline/demo — estes dados ficam só neste navegador (localStorage), sem conexão com o banco.</p>
     <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-family:'Archivo Narrow';font-weight:600;margin-bottom:10px">Clientes</div>
     <div class="olist">${rows||'<div class="footnote">Nenhum cliente cadastrado.</div>'}</div>
     <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
     <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-family:'Archivo Narrow';font-weight:600;margin-bottom:10px" id="admFormTitle">Novo cliente</div>
-    <div class="row2">
-      <div class="field"><label>Chave (vai na URL) — só minúsculas/números</label><input id="admSlug" placeholder="ex.: construtorax"></div>
-      <div class="field"><label>Nome do cliente</label><input id="admNome" placeholder="ex.: Construtora X"></div>
-    </div>
-    <div class="field"><label>Logo</label>
-      <div style="display:flex;gap:18px;margin-bottom:8px">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="admLogoType" id="admLogoTypeSigla" value="sigla" onchange="renderLogoInput()" checked> Sigla (texto)</label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="admLogoType" id="admLogoTypeImage" value="image" onchange="renderLogoInput()"> Imagem</label>
-      </div>
-      <div id="logoInputArea"></div>
-    </div>
-    <div class="row2">
-      <div class="field"><label>Fonte pagadora 1</label><input id="admFA" placeholder="XJBR"></div>
-      <div class="field"><label>Fonte pagadora 2</label><input id="admFB" placeholder="MPI"></div>
-    </div>
-    <div class="row2">
-      <div class="field"><label>Senha Financeiro (edita)</label><input id="admPF" type="password" placeholder="senha completa"></div>
-      <div class="field"><label>Senha Visualizador (só lê)</label><input id="admPV" type="password" placeholder="senha leitura"></div>
-    </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end">
-      <button class="btn btn-line" onclick="admFormReset()">Limpar</button>
-      <button class="btn btn-primary" onclick="adminSave()">＋ Salvar cliente</button>
-    </div>`;
+    ${admFormHtml()}`;
   renderLogoInput();
 }
+
+async function renderAdminOnline(){
+  document.getElementById('adminBody').innerHTML = '<p class="footnote">Carregando…</p>';
+  try{
+    const res = await fetch('/api/admin/tenants', {headers: await authHeader()});
+    const out = await res.json().catch(()=>({}));
+    if(!res.ok){ toast((out&&out.error)||'Erro ao carregar parceiros'); _admTenantsCache=[]; }
+    else { _admTenantsCache = out.tenants||[]; }
+  }catch(e){ toast('Erro ao carregar parceiros'); _admTenantsCache=[]; }
+
+  const rows=_admTenantsCache.map(t=>{
+    const fa=(t.fontes&&t.fontes[0])||'XJBR'; const fb=(t.fontes&&t.fontes[1])||'—';
+    const atual = t.tenant===TENANT?' <span style="color:var(--ochre-d);font-weight:700">(atual)</span>':'';
+    const logoEl = t.logo&&t.logo.type==='image'&&t.logo.value
+      ? `<img src="${t.logo.value}" style="width:100%;height:100%;object-fit:contain;border-radius:6px">`
+      : `<span style="font-family:'Fraunces';font-weight:700;font-size:14px;color:var(--ochre)">${esc((t.logo&&t.logo.value)||'C7')}</span>`;
+    return `<div class="oitem" style="flex-wrap:wrap;gap:8px;align-items:center">
+      <div style="width:36px;height:36px;border:1.5px solid var(--ochre);border-radius:8px;display:grid;place-items:center;flex-shrink:0;overflow:hidden;background:rgba(201,128,43,.08)">${logoEl}</div>
+      <div style="flex:1;min-width:140px">
+        <div style="font-weight:700">${esc(t.nome||t.tenant)} <span style="color:var(--muted);font-weight:400">/${esc(t.tenant)}</span>${atual}</div>
+        <div style="font-size:12px;color:var(--ink2)">${esc(fa)} × ${esc(fb)}</div>
+      </div>
+      <button class="btn btn-line btn-sm" onclick="openTenant('${esc(t.tenant)}')">↗ Abrir</button>
+      <button class="iconbtn" title="Editar" onclick="adminEdit('${esc(t.tenant)}')">✎</button>
+      <button class="iconbtn del" title="Remover cliente" onclick="adminRemove('${esc(t.tenant)}')">🗑</button>
+    </div>`;
+  }).join('');
+
+  document.getElementById('adminBody').innerHTML = `
+    <p class="footnote" style="margin-bottom:8px">Gerencie todos os clientes — criar, editar, abrir ou remover.</p>
+    <p class="footnote" style="margin-bottom:12px">As alterações ficam salvas no banco e valem para todos os navegadores.</p>
+    <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-family:'Archivo Narrow';font-weight:600;margin-bottom:10px">Clientes</div>
+    <div class="olist">${rows||'<div class="footnote">Nenhum cliente cadastrado.</div>'}</div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
+    <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-family:'Archivo Narrow';font-weight:600;margin-bottom:10px" id="admFormTitle">Novo cliente</div>
+    ${admFormHtml()}`;
+  renderLogoInput();
+}
+
 function admFormReset(){
   admLogoBase64=''; _admEditSlug=null;
   ['admSlug','admNome','admFA','admFB','admPF','admPV'].forEach(id=>{const e=document.getElementById(id); if(e)e.value='';});
@@ -2046,13 +2140,14 @@ function admFormReset(){
   renderLogoInput();
 }
 function adminEdit(slug){
-  const t=loadTenantRegistry()[slug]||{}; _admEditSlug=slug;
+  _admEditSlug=slug;
+  const t = LOCAL ? (loadTenantRegistry()[slug]||{}) : (_admTenantsCache.find(x=>x.tenant===slug)||{});
   document.getElementById('admSlug').value=slug; document.getElementById('admSlug').disabled=true;
   document.getElementById('admNome').value=t.nome||'';
   document.getElementById('admFA').value=(t.fontes&&t.fontes[0])||'';
   document.getElementById('admFB').value=(t.fontes&&t.fontes[1])||'';
-  document.getElementById('admPF').value=t.PASS_FINANCEIRO||'';
-  document.getElementById('admPV').value=t.PASS_VIEWER||'';
+  document.getElementById('admPF').value=LOCAL?(t.PASS_FINANCEIRO||''):'';
+  document.getElementById('admPV').value=LOCAL?(t.PASS_VIEWER||''):'';
   document.getElementById('admFormTitle').textContent='Editar cliente: '+slug;
   // Logo
   admLogoBase64=(t.logo&&t.logo.type==='image')?t.logo.value||'':'';
@@ -2062,28 +2157,61 @@ function adminEdit(slug){
   if(t.logo&&t.logo.type==='sigla'){ const v=document.getElementById('admLogoVal'); if(v)v.value=t.logo.value||''; }
   document.getElementById('adminBody').scrollTop=document.getElementById('adminBody').scrollHeight;
 }
-function adminSave(){
+async function adminSave(){
   let slug=(_admEditSlug||document.getElementById('admSlug').value||'').trim().toLowerCase().replace(/[^a-z0-9\-]/g,'');
   if(!slug){toast('Informe a chave (URL) do cliente');return;}
   const logoType=document.querySelector('input[name=admLogoType]:checked')?.value||'sigla';
   const logo=logoType==='sigla'
     ? {type:'sigla',value:((document.getElementById('admLogoVal')?.value)||'C7').toUpperCase().slice(0,4)}
     : {type:'image',value:admLogoBase64};
-  const def={
-    nome:document.getElementById('admNome').value.trim()||slug.toUpperCase(),
-    fontes:[document.getElementById('admFA').value.trim()||'XJBR', document.getElementById('admFB').value.trim()||'MPI'],
-    logo,
-    PASS_FINANCEIRO:document.getElementById('admPF').value||'',
-    PASS_VIEWER:document.getElementById('admPV').value||''
-  };
-  saveTenantCustom(slug, def); admFormReset(); renderAdmin(); toast('Cliente salvo');
+  const nome=document.getElementById('admNome').value.trim()||slug.toUpperCase();
+  const fontes=[document.getElementById('admFA').value.trim()||'XJBR', document.getElementById('admFB').value.trim()||'MPI'];
+  const passFinanceiro=document.getElementById('admPF').value||'';
+  const passViewer=document.getElementById('admPV').value||'';
+
+  if(LOCAL){
+    const def={ nome, fontes, logo, PASS_FINANCEIRO:passFinanceiro, PASS_VIEWER:passViewer };
+    saveTenantCustom(slug, def); admFormReset(); renderAdmin(); toast('Cliente salvo');
+    return;
+  }
+
+  const isNew = !_admEditSlug;
+  if(isNew && (!passFinanceiro || !passViewer)){ toast('Informe as duas senhas para criar um novo cliente'); return; }
+  const body={ slug, nome, fontes, logo };
+  if(passFinanceiro) body.passFinanceiro=passFinanceiro;
+  if(passViewer) body.passViewer=passViewer;
+
+  const btn=document.querySelector('#adminBody .btn-primary');
+  if(btn){btn.disabled=true;btn.textContent='Salvando…';}
+  try{
+    const res=await fetch('/api/admin/tenants',{
+      method: isNew?'POST':'PUT',
+      headers: Object.assign({'Content-Type':'application/json'}, await authHeader()),
+      body: JSON.stringify(body)
+    });
+    const out=await res.json().catch(()=>({}));
+    if(!res.ok || out.error){ toast((out&&out.error)||'Erro ao salvar cliente'); return; }
+    admFormReset(); await renderAdmin(); toast('Cliente salvo');
+    if(slug===TENANT) location.reload();
+  } finally { if(btn){btn.disabled=false;btn.textContent='＋ Salvar cliente';} }
 }
-function adminRemove(slug){
+async function adminRemove(slug){
   if(slug===TENANT){toast('Não dá para remover o parceiro que está aberto agora');return;}
   if(!confirm('Remover o parceiro "'+slug+'" da lista? (os dados locais dele continuam guardados)'))return;
-  removeTenantReg(slug); renderAdmin(); toast('Parceiro removido');
+  if(LOCAL){ removeTenantReg(slug); renderAdmin(); toast('Parceiro removido'); return; }
+  try{
+    const res=await fetch('/api/admin/tenants',{
+      method:'DELETE',
+      headers: Object.assign({'Content-Type':'application/json'}, await authHeader()),
+      body: JSON.stringify({slug})
+    });
+    const out=await res.json().catch(()=>({}));
+    if(!res.ok || out.error){ toast((out&&out.error)||'Erro ao remover cliente'); return; }
+    await renderAdmin(); toast('Parceiro removido');
+  }catch(e){ toast('Erro ao remover cliente'); }
 }
 function adminClear(slug){
+  if(!LOCAL) return;
   if(!confirm('Apagar TODOS os dados locais do parceiro "'+slug+'"? Não dá para desfazer.'))return;
   try{localStorage.removeItem('xjbr_state_'+slug);}catch(e){}
   renderAdmin(); toast('Dados locais apagados');
@@ -2146,6 +2274,8 @@ function applyBranding(){
 }
 
 async function init(){
+  const cfgData = await loadPublicConfig();
+  setupTenantContext(cfgData);
   applyBranding();
   if(LOCAL){
     document.getElementById('authOverlay').style.display='flex';

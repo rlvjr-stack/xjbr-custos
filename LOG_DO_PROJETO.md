@@ -2,7 +2,7 @@
 
 > Documento de continuidade. Resume **tudo que foi feito**, o **estado atual**, as
 > **decisões**, **senhas/credenciais**, a **estrutura de arquivos** e os **próximos passos**.
-> Última atualização: **07/06/2026 (sessão 5)** — Visualizador vê Valor Total e Rateado no detalhe da obra.
+> Última atualização: **12/06/2026 (sessão 6)** — Reescrita completa de segurança: backend serverless `/api` na Vercel, `config.js` removido, segredos só em variáveis de ambiente.
 
 ---
 
@@ -19,11 +19,18 @@ Concepção atual: o **Dev** é o administrador central que cria e gerencia **cl
 
 ## 2. Estado atual (resumo rápido)
 
-- ✅ Funciona **agora em modo LOCAL** (no navegador, sem instalar nada).
-- ✅ Pronto para virar **ONLINE** (Supabase) só preenchendo o `config.js`.
-- ✅ **Multi-cliente**: cada cliente tem ambiente isolado (`/mpi`, `/construtorax`…).
+- ✅ **Segurança reescrita (sessão 6)**: backend serverless `/api` na Vercel; segredos
+  (chave `service_role`, `DEV_PASS`, hashes/senhas internas) só em variáveis de
+  ambiente — nunca em arquivo do site. `config.js` **removido**.
+- ✅ Pronto para virar **ONLINE** (Supabase) configurando as variáveis de ambiente na Vercel
+  e rodando o **bootstrap** (`/api/admin/bootstrap`) uma única vez.
+- ✅ Sem backend configurado, cai em **modo LOCAL/demo** (no navegador, `localStorage`,
+  senhas de demonstração fixas) — não protege dado real algum.
+- ✅ **Multi-cliente**: cada cliente tem ambiente isolado (`/mpi`, `/construtorax`…), agora
+  persistido no banco (`tenant_settings`) e gerenciado pelo Painel Dev via `/api/admin/tenants`.
 - ✅ **3 perfis de acesso**: Financeiro, Visualizador e Dev (super-admin).
-- ✅ **Painel Dev** com criação de clientes, logo (sigla ou imagem), fontes e senhas.
+- ✅ **Painel Dev** com criação de clientes, logo (sigla ou imagem), fontes e senhas — agora
+  persistido no banco em modo online (sem mais lista local/`config.js`).
 - ✅ **Arquivar obras**: Financeiro arquiva com data de término; obra sai do picker de novas despesas; pode reativar.
 - ✅ **Filtro Ativas / Arquivadas / Todas**: afeta KPIs, gráficos e tabela.
 - ✅ **Formato R$ brasileiro** em todos os campos de valor (prefixo R$, `.` milhar, `,` decimal).
@@ -32,10 +39,10 @@ Concepção atual: o **Dev** é o administrador central que cria e gerencia **cl
 - ✅ **Tooltip nas ações de obra** (📦 Arquivar Obra / 🗑 Excluir Obra).
 - ✅ **Rateio manual por obra**: ao criar/editar lançamento, escolha entre divisão igual ou valor manual por obra; soma deve fechar com o total; relatórios usam os valores reais.
 - ✅ **7 correções** de análise aplicadas (veja seção 8).
-- ❌ **Modo online ainda não ativado** (depende de criar projeto Supabase).
+- ❌ **Modo online ainda não ativado** (depende de criar projeto Supabase + variáveis de ambiente + bootstrap).
 - ❌ **Não publicado** na Vercel.
 
-Para testar localmente: `http://localhost:8123/?t=mpi` → senha `dev-master`.
+Para testar localmente (modo demo/offline, sem backend): `http://localhost:8123/?t=mpi` → senha `dev-master`.
 
 ---
 
@@ -48,17 +55,23 @@ Para testar localmente: `http://localhost:8123/?t=mpi` → senha `dev-master`.
 
 ---
 
-## 4. Senhas atuais (EXEMPLOS — trocar antes de publicar)
+## 4. Senhas atuais
 
-Definidas no arquivo **`config.js`**.
+**Modo demo/offline (sem backend)** — fixas em `LOCAL_FALLBACK_CONFIG` dentro do
+`index.html`, sem efeito em produção e sem proteger dado real algum:
 
-| Acesso | Senha (exemplo) | Onde muda |
-|---|---|---|
-| **Dev** (super-admin, global) | `dev-master` | `config.js` → `DEV_PASS` |
-| MPI — Financeiro | `classe7` | `config.js` → TENANTS.mpi.PASS_FINANCEIRO |
-| MPI — Visualizador | `ver123` | `config.js` → TENANTS.mpi.PASS_VIEWER |
-| Construtora X — Financeiro | `trocar-financeiro` | `config.js` → TENANTS.construtorax.PASS_FINANCEIRO |
-| Construtora X — Visualizador | `trocar-leitura` | `config.js` → TENANTS.construtorax.PASS_VIEWER |
+| Acesso | Senha (demo) |
+|---|---|
+| **Dev** (super-admin, global) | `dev-master` |
+| MPI — Financeiro | `classe7` |
+| MPI — Visualizador | `ver123` |
+
+**Modo online (produção)** — não há mais senhas fixas no código:
+
+| Acesso | Onde fica |
+|---|---|
+| **Dev** (super-admin, global) | variável de ambiente `DEV_PASS` na Vercel |
+| Financeiro / Visualizador de cada parceiro | hash (bcrypt) em `tenant_settings`, definido no **bootstrap** (`/api/admin/bootstrap`) ou no Painel Dev (`/api/admin/tenants`) |
 
 > O Dev entra pela mesma tela de senha; o sistema reconhece automaticamente
 > e mostra o botão **🛠 Admin**.
@@ -78,17 +91,30 @@ Definidas no arquivo **`config.js`**.
 ```
 XJBR-MPI/
 ├── index.html                       ← o sistema (HTML + CSS + JS)
-├── config.js                        ← senhas, clientes e chaves do Supabase
-├── vercel.json                      ← roteamento /mpi, /construtorax na Vercel
+├── api/
+│   ├── public-config.js             ← config pública (anon key + lista de parceiros)
+│   ├── login.js                     ← verifica senha no servidor, devolve sessão
+│   └── admin/
+│       ├── tenants.js               ← CRUD de parceiros (só Dev, via Bearer token)
+│       └── bootstrap.js             ← inicialização única (1º parceiro + conta Dev)
+├── lib/
+│   ├── supabaseAdmin.js             ← cliente Supabase com service_role
+│   ├── requireDev.js                ← valida que o usuário logado é "dev"
+│   └── tenantCrud.js                ← cria/edita contas e senhas de parceiros
+├── vercel.json                      ← roteamento /mpi, /construtorax, /api na Vercel
+├── package.json / package-lock.json ← dependências (@supabase/supabase-js, bcryptjs)
 ├── supabase/
-│   └── schema.sql                   ← cria o banco online (tabelas + segurança RLS)
-├── GUIA_DE_INSTALACAO.md            ← passo a passo para publicar (Supabase + Vercel + domínio)
+│   └── schema.sql                   ← cria o banco online (tabelas + segurança RLS + tenant_settings)
+├── GUIA_DE_INSTALACAO.md            ← passo a passo para publicar (Supabase + variáveis de ambiente + Vercel + bootstrap)
 ├── TUTORIAL_COLOCAR_ONLINE.pdf      ← tutorial em PDF para leigo: GitHub + Supabase + Vercel + deploy
 ├── DASHBOARD_CLASSE7_DOCUMENTACAO.md← manual de uso das funcionalidades
 ├── README.md                        ← visão geral
 ├── gerar_tutorial_pdf.js            ← script Node.js que gerou o PDF do tutorial
 └── LOG_DO_PROJETO.md                ← este arquivo
 ```
+
+> 🔒 `config.js` foi **removido** — não existe mais nenhum arquivo com chaves/senhas
+> no site. Tudo isso vive em variáveis de ambiente da Vercel, lidas só por `api/`.
 
 ---
 
@@ -141,6 +167,17 @@ XJBR-MPI/
     - **Obras arquivadas** não aparecem no picker de casas ao criar lançamento
     - **Painel Dev reformulado**: lista com logo em miniatura, formulário "Novo cliente" com logo (sigla ou upload de imagem), senhas com type=password
 
+17. **Sessão 12/06/2026 (sessão 6) — Reescrita completa de segurança:**
+    - **Problema identificado**: `config.js` era um arquivo estático público que expunha `DEV_PASS`, `PASS_FINANCEIRO` e `PASS_VIEWER` em texto puro — qualquer visitante podia logar como `dev@xjbr.local` (acesso total cross-tenant, ignorando RLS).
+    - **Solução**: backend serverless `/api` na Vercel; segredos (chave `service_role`, `DEV_PASS`, senhas internas) só em variáveis de ambiente, nunca em arquivo do site.
+    - **Nova tabela `tenant_settings`** (RLS habilitado, zero políticas = só `service_role`) guarda a configuração e os hashes de senha de cada parceiro.
+    - `config.js` **removido**; novo endpoint `/api/public-config` substitui o `<script src="config.js">` e devolve apenas a chave pública `anon` + a lista de parceiros.
+    - `/api/login`: verifica a senha no servidor (bcrypt) e devolve tokens de sessão (`sb.auth.setSession()`).
+    - **Painel Dev** agora persiste parceiros no banco via `/api/admin/tenants` (GET/POST/PUT/DELETE, protegido por Bearer token do Dev).
+    - `/api/admin/bootstrap`: inicialização única (cria o 1º parceiro + a conta Dev), autodesativa-se após o primeiro uso (`_bootstrap_lock`).
+    - Modo **LOCAL/demo** preservado como fallback offline (`LOCAL_FALLBACK_CONFIG`, senhas fixas `dev-master`/`classe7`/`ver123`) — não protege dado real algum.
+    - `package.json` criado (`@supabase/supabase-js`, `bcryptjs`); `.gitignore` e `vercel.json` atualizados; toda a documentação (README, GUIA_DE_INSTALACAO, DASHBOARD) revisada.
+
 16. **Sessão 07/06/2026 (parte 3) — Visualizador vê Valor Total e Rateado no detalhe da obra:**
     - Corrigida a regra `body.viewer ... td:last-child` que escondia a última coluna de **todas** as tabelas: agora escopada a `.tablewrap` (só a tabela principal de lançamentos), preservando a coluna **Rateado** na tabela do detalhe da obra (`.od-table`)
     - Visualizador agora enxerga **Valor total** e **Rateado** ao abrir os custos de uma obra; as ações de editar/excluir, o botão "Novo lançamento" e demais controles de escrita continuam ocultos para o Visualizador (verificado no navegador)
@@ -184,6 +221,9 @@ XJBR-MPI/
 - **Logo:** sigla de texto (máx 4 chars) OU imagem em base64 (máx 500KB) — armazenada no registro do cliente (localStorage / Supabase).
 - **Filtro de obras:** aparece automaticamente quando existe ao menos uma obra arquivada — não polui a UI antes de ser necessário.
 - **Dev é o único que cria clientes** — Financeiro só gerencia obras e lançamentos do seu ambiente.
+- **Credenciais sensíveis (sessão 6)**: nunca em arquivo estático do site. Vivem em variáveis de
+  ambiente da Vercel (`SUPABASE_SERVICE_ROLE_KEY`, `DEV_PASS`, etc.) e em `tenant_settings`
+  (RLS habilitado, zero políticas = só `service_role`), acessadas apenas pelas funções `/api`.
 
 ---
 
@@ -193,17 +233,19 @@ XJBR-MPI/
 - [ ] Nenhuma pendente no momento. Todas as solicitações das sessões 1 e 2 foram concluídas.
 
 ### Para publicar (sair do modo local para o online)
-Seguir o **`GUIA_DE_INSTALACAO.md`**:
-1. Criar projeto no **Supabase** (região São Paulo).
-2. Rodar o **`supabase/schema.sql`** no SQL Editor.
+Seguir o **`GUIA_DE_INSTALACAO.md`** (4 etapas):
+1. Criar projeto no **Supabase** (região São Paulo) e rodar **`supabase/schema.sql`** no SQL Editor
+   — já cria `tenant_settings`, RLS e o bucket `comprovantes`.
    - **Atenção:** o schema ainda não tem as colunas `archived` e `ended_at` na tabela `obras`. Adicionar antes de rodar:
      ```sql
      alter table public.obras add column if not exists archived boolean default false;
      alter table public.obras add column if not exists ended_at date;
      ```
-3. Criar os usuários de cada cliente + o Dev e rodar os blocos de perfis.
-4. Preencher `SUPABASE_URL` e `SUPABASE_ANON_KEY` no **`config.js`**.
-5. Publicar na **Vercel** e ligar o domínio `www.xjbr.com.br`.
+2. Configurar as **variáveis de ambiente** na Vercel: `SUPABASE_URL`, `SUPABASE_ANON_KEY`,
+   `SUPABASE_SERVICE_ROLE_KEY`, `DEV_PASS`, `DEFAULT_TENANT` e (opcional) `BOOTSTRAP_TOKEN`.
+3. Publicar o projeto na **Vercel** e ligar o domínio `www.xjbr.com.br`.
+4. Rodar o **bootstrap** (`POST /api/admin/bootstrap`) uma única vez para criar o(s) primeiro(s)
+   parceiro(s) (Financeiro/Visualizador) e a conta Dev — não há mais usuários/senhas pré-criados manualmente.
 
 ### Pendências combinadas / sugestões
 - [ ] **Trocar as senhas de exemplo** por senhas reais antes de publicar.
@@ -218,7 +260,9 @@ Seguir o **`GUIA_DE_INSTALACAO.md`**:
 
 - Modo detectado por `LOCAL = !sb` (sem Supabase configurado → local com `localStorage`).
 - Parceiro/cliente vem da URL: `resolveTenantSlug()` (1º trecho do caminho, ou `?t=slug`, ou `DEFAULT_TENANT`).
-- Registro de clientes: `loadTenantRegistry()` = `config.js` + ajustes do Dev (`xjbr_tenants_v1` / `xjbr_tenants_removed` no localStorage).
+- Registro de clientes: em modo ONLINE vem de `PUBLIC_TENANTS`, preenchido por `/api/public-config`
+  (lê `tenant_settings` no banco). Em modo LOCAL, `loadTenantRegistry()` = `LOCAL_FALLBACK_CONFIG.tenants`
+  + ajustes do Dev (`xjbr_tenants_v1` / `xjbr_tenants_removed` no localStorage).
 - **Fontes pagadoras**: array global `FONTES`; `FA=FONTES[0]`, `FB=FONTES[1]`; editável no modal Configurações; persistido em `c7_fontes_<tenant>`.
 - **Rateio por obra**: campo `rateio` no lançamento (`{obraId: valor}` ou `null`). Função `valorParaObra(l, obraId)` usada em todos os cálculos. Variáveis globais no formulário: `rateioMode` ('igual'|'manual') e `curRateio` (objeto temporário).
 - **Centros de custo**: array global `CC_DEFS` (termina com sentinel `{key:'',label:'Sem categoria'}`); editável no modal Configurações; persistido em `c7_cc_<tenant>`; helpers: `ccLabel(key)`, `ccColor(key)`, `ccBgStyle(key)`.

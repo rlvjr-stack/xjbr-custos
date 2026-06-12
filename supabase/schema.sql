@@ -131,29 +131,41 @@ create policy comprovantes_delete on storage.objects
   using (bucket_id = 'comprovantes' and (((storage.foldername(name))[1] = public.user_tenant() and public.user_role() = 'financeiro') or public.user_role() = 'dev'));
 
 -- =====================================================================
--- USUÁRIOS POR PARCEIRO
--- Para CADA parceiro, crie 2 contas em Authentication → Users
--- (marque "Auto Confirm User") com este padrão de e-mail:
---    financeiro@<parceiro>.xjbr.local      (acesso completo)
---    visualizador@<parceiro>.xjbr.local    (somente leitura)
--- e defina as senhas que os operadores vão digitar.
--- Depois rode o bloco abaixo (troque <parceiro>) para ligar papel+parceiro.
+-- TENANT_SETTINGS — configuração e credenciais por parceiro
+--   RLS habilitado e SEM policies: só o backend (service_role), via
+--   funções serverless em /api, pode ler/escrever esta tabela.
+--   Os clientes (navegador) nunca têm acesso direto a ela.
 -- =====================================================================
--- Exemplo para o parceiro "mpi":
--- insert into public.profiles (id, role, tenant)
--- select id, 'financeiro', 'mpi' from auth.users where email = 'financeiro@mpi.xjbr.local'
--- on conflict (id) do update set role = excluded.role, tenant = excluded.tenant;
---
--- insert into public.profiles (id, role, tenant)
--- select id, 'viewer', 'mpi' from auth.users where email = 'visualizador@mpi.xjbr.local'
--- on conflict (id) do update set role = excluded.role, tenant = excluded.tenant;
---
--- Para um novo parceiro (ex.: 'construtorax'), repita criando as contas
--- financeiro@construtorax.xjbr.local / visualizador@construtorax.xjbr.local
--- e rodando o bloco acima trocando 'mpi' por 'construtorax'.
---
--- USUÁRIO DEV (super-admin, acessa TODOS os parceiros): crie a conta
---    dev@xjbr.local   (Auto Confirm) com a senha do Dev, e rode:
--- insert into public.profiles (id, role, tenant)
--- select id, 'dev', 'all' from auth.users where email = 'dev@xjbr.local'
--- on conflict (id) do update set role = excluded.role, tenant = excluded.tenant;
+create table if not exists public.tenant_settings (
+  tenant                    text primary key,
+  nome                      text,
+  fontes                    text[],
+  logo                      jsonb,
+  pass_financeiro_hash      text,
+  pass_viewer_hash          text,
+  internal_pass_financeiro  text,
+  internal_pass_viewer      text,
+  internal_pass_dev         text,
+  financeiro_user_id        uuid,
+  viewer_user_id            uuid,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table public.tenant_settings enable row level security;
+
+drop trigger if exists trg_tenant_settings_touch on public.tenant_settings;
+create trigger trg_tenant_settings_touch before update on public.tenant_settings
+  for each row execute function public.touch_updated_at();
+
+-- =====================================================================
+-- USUÁRIOS POR PARCEIRO
+--   As contas de Authentication (financeiro@<tenant>.xjbr.local,
+--   visualizador@<tenant>.xjbr.local, dev@xjbr.local), os registros em
+--   public.profiles e as senhas (com hash) em public.tenant_settings
+--   são criados/gerenciados automaticamente pelo backend:
+--     • Primeira configuração: POST /api/admin/bootstrap (uma única vez)
+--     • Novos parceiros / troca de senha: painel Admin (usuário dev),
+--       que chama /api/admin/tenants
+--   Não é necessário (e não deve ser feito) criar essas contas
+--   manualmente pelo SQL Editor.
+-- =====================================================================
