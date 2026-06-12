@@ -1,12 +1,16 @@
 # Dependências e ferramentas (não fazem parte do site)
 node_modules/
-package.json
-package-lock.json
 gerar_tutorial_pdf.js
 teste_fonte.pdf
 
 # Configuração do ambiente de testes local
 .claude/
+
+# Vercel e segredos locais — NUNCA versionar
+.vercel
+.env
+.env.local
+.env*.local
 
 # Arquivos temporários / lixo de sistema
 _check.js

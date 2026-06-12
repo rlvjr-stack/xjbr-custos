@@ -1,6 +1,7 @@
 {
   "cleanUrls": true,
   "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/:path*" },
     { "source": "/", "destination": "/index.html" },
     { "source": "/:tenant", "destination": "/index.html" },
     { "source": "/:tenant/:path*", "destination": "/index.html" }

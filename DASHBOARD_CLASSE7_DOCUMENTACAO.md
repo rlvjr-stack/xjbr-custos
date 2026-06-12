@@ -1,6 +1,6 @@
 # Sistema de Controle de Custos de Obra — Classe 7
 
-> **Arquivos principais:** `index.html` (aplicação) · `config.js` (configuração) · `supabase/schema.sql` (banco)
+> **Arquivos principais:** `index.html` (aplicação) · `api/` (funções do servidor) · `supabase/schema.sql` (banco)
 > **Tecnologia:** HTML + CSS + JavaScript · Chart.js 4.4.1 · **Supabase** (PostgreSQL + Storage + Auth)
 > **Hospedagem recomendada:** Vercel (com domínio próprio + HTTPS)
 > **Guia de publicação:** veja [`GUIA_DE_INSTALACAO.md`](GUIA_DE_INSTALACAO.md)
@@ -332,7 +332,7 @@ O sistema vem com **+130 lançamentos de exemplo** pré-carregados, cobrindo obr
 O sistema é **multi-ambiente**: atende vários parceiros no mesmo domínio, cada um pelo caminho da URL — `www.xjbr.com.br/mpi`, `www.xjbr.com.br/construtorax`, etc. Cada ambiente tem **dados, relatórios e senhas próprios e isolados** (um não enxerga o outro).
 
 - O parceiro é detectado pelo **primeiro trecho do caminho** da URL (ou por `?t=slug` em teste local).
-- Cada parceiro é definido em `config.js` → `TENANTS`, com **nome**, suas **duas fontes pagadoras** (ex.: `XJBR × MPI`, `XJBR × Construtora X`) e as **senhas** (modo local).
+- Cada parceiro é um registro na tabela `tenant_settings` (Supabase), com **nome**, suas **duas fontes pagadoras** (ex.: `XJBR × MPI`, `XJBR × Construtora X`), logo e senhas — gerenciado pelo Dev no **Painel do Desenvolvedor** (🛠 Admin), sem editar arquivos.
 - No **modo online**, um único banco Supabase guarda todos, com isolamento por **RLS** (cada conta só acessa o seu parceiro) e comprovantes separados por pasta no Storage.
 - Passo a passo para criar um novo parceiro: veja [`GUIA_DE_INSTALACAO.md`](GUIA_DE_INSTALACAO.md).
 
@@ -340,12 +340,12 @@ O sistema é **multi-ambiente**: atende vários parceiros no mesmo domínio, cad
 
 ## Modos de funcionamento
 
-O sistema detecta sozinho como deve funcionar, conforme o `config.js`:
+O sistema detecta sozinho como deve funcionar, com base na resposta de `/api/public-config`:
 
-- **Modo LOCAL** (padrão, enquanto o Supabase não estiver preenchido): funciona no próprio navegador, salvando os dados no `localStorage`. As senhas ficam no `config.js` (`PASS_FINANCEIRO` e `PASS_VIEWER`). Ideal para usar/testar imediatamente, sem instalar nada. Os dados ficam só naquele computador/navegador.
-- **Modo ONLINE** (depois que você preencher `SUPABASE_URL` e `SUPABASE_ANON_KEY`): funciona na nuvem, multiusuário, com banco PostgreSQL e storage de arquivos. As senhas passam a ser as das contas criadas no Supabase. A troca de modo é **automática** — basta preencher o `config.js`.
+- **Modo LOCAL** (somente se `/api/public-config` estiver inacessível — ex.: pré-visualização offline): funciona no próprio navegador, salvando os dados no `localStorage`, com senhas de demonstração fixas no `index.html`. Não protege nenhum dado real — serve só para testar a interface sem backend.
+- **Modo ONLINE** (publicado na Vercel com as variáveis de ambiente do Supabase configuradas — ver [`GUIA_DE_INSTALACAO.md`](GUIA_DE_INSTALACAO.md)): funciona na nuvem, multiusuário, com banco PostgreSQL e storage de arquivos. O login é verificado no servidor (`/api/login`) contra as senhas definidas para cada parceiro em `tenant_settings`.
 
-> Senhas padrão do modo local (troque no `config.js`): Financeiro = `classe7`, Visualizador = `ver123`.
+> Senhas de demonstração do modo offline (sem efeito em produção): Financeiro = `classe7`, Visualizador = `ver123`, Dev = `dev-master`.
 
 ---
 
@@ -354,9 +354,10 @@ O sistema detecta sozinho como deve funcionar, conforme o `config.js`:
 - Acesso por **senha**, com três perfis:
   - **Financeiro** — acesso completo (cria/edita/exclui) no seu parceiro
   - **Visualizador** — somente leitura; **vê e abre os comprovantes/anexos** (não edita)
-  - **Dev** — super-administrador: senha em `config.js` (`DEV_PASS`); abre o **Painel do Desenvolvedor** (🛠 Admin) para criar/editar/remover parceiros e administrar tudo, em qualquer ambiente
+  - **Dev** — super-administrador: senha na variável de ambiente `DEV_PASS` (Vercel); abre o **Painel do Desenvolvedor** (🛠 Admin) para criar/editar/remover parceiros e administrar tudo, em qualquer ambiente
+- A senha digitada nunca é verificada no navegador: o front-end envia para `/api/login`, que confere o hash no servidor e devolve uma sessão já autenticada do Supabase
 - Por baixo, cada perfil é uma **conta real no Supabase Auth**; a separação de permissões é imposta pelo banco via **Row Level Security (RLS)**, não apenas escondendo botões na tela
-- A chave usada no `config.js` é a **chave pública (`anon`)** — é seguro deixá-la no navegador. **Nunca** use a chave `service_role` no front-end
+- A única chave que chega ao navegador é a **chave pública (`anon`)**, via `/api/public-config` — é segura por design (a RLS protege os dados). A chave `service_role`, os hashes de senha e a `DEV_PASS` ficam **só** em variáveis de ambiente da Vercel, lidas pelas funções em `api/`
 - Os comprovantes ficam num **bucket privado** e só são acessados por link assinado temporário
 - **Importante:** defina senhas fortes e **diferentes** para as contas Financeiro e Visualizador
 
