@@ -35,7 +35,7 @@ module.exports = async (req, res) => {
   });
 
   // Conta Dev: senha-master valida para qualquer parceiro, acesso total.
-  if (process.env.DEV_PASS && password === process.env.DEV_PASS) {
+  if (process.env.DEV_PASS && password === process.env.DEV_PASS.trim()) {
     const { data: devRow, error: devErr } = await sbAdmin
       .from('tenant_settings')
       .select('internal_pass_dev')
