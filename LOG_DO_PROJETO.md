@@ -2,7 +2,7 @@
 
 > Documento de continuidade. Resume **tudo que foi feito**, o **estado atual**, as
 > **decisões**, **senhas/credenciais**, a **estrutura de arquivos** e os **próximos passos**.
-> Última atualização: **13/06/2026 (sessão 7)** — Site publicado e ao vivo; corrigido deploy travado na Vercel (e-mail do commit), colunas faltando no banco (`rateio`, `archived`, `ended_at`) e cards/gráfico de fonte pagadora agora aceitam mais de 2 fontes.
+> Última atualização: **13/06/2026 (sessão 7)** — Site publicado e ao vivo; corrigido deploy travado na Vercel (e-mail do commit), colunas faltando no banco (`rateio`, `archived`, `ended_at`), cards/gráfico de fonte pagadora agora aceitam mais de 2 fontes, e tabela "Lançamentos vinculados" do detalhe da obra corrigida em modo mobile (vira lista de cards).
 
 ---
 
@@ -42,6 +42,7 @@ Concepção atual: o **Dev** é o administrador central que cria e gerencia **cl
 - ✅ **Publicado** em produção na Vercel (`xjbr-custos.vercel.app`); domínio `www.xjbr.com.br` ainda não conectado.
 - ✅ **Botão de tema claro/escuro** no cabeçalho (desktop) e no menu (mobile).
 - ✅ **Fontes pagadoras dinâmicas nos resultados**: cards "Pago por X" e o gráfico "Por fonte pagadora" agora mostram TODAS as fontes cadastradas (não só as 2 primeiras).
+- ✅ **Tabela "Lançamentos vinculados" responsiva**: no detalhe da obra, em telas ≤768px a tabela (que quebrava texto letra-por-letra) é substituída por uma lista de cards, igual ao padrão da lista principal de lançamentos.
 - ⚠️ **Pendente: rodar `supabase/schema.sql` atualizado no SQL Editor do Supabase** — adiciona as colunas `lancamentos.rateio` (jsonb) e `obras.archived`/`obras.ended_at`, que faltavam no banco e causavam erro ao salvar lançamento/arquivar obra.
 
 Para testar localmente (modo demo/offline, sem backend): `http://localhost:8123/?t=mpi` → senha `dev-master`.
@@ -168,6 +169,11 @@ XJBR-MPI/
     - **Filtro Ativas / Arquivadas / Todas**: barra aparece ao arquivar primeira obra; afeta KPIs, gráficos e tabela
     - **Obras arquivadas** não aparecem no picker de casas ao criar lançamento
     - **Painel Dev reformulado**: lista com logo em miniatura, formulário "Novo cliente" com logo (sigla ou upload de imagem), senhas com type=password
+
+20. **Sessão 13/06/2026 (sessão 7, parte 3) — Tabela "Lançamentos vinculados" responsiva no detalhe da obra:**
+    - **Bug**: no modal "Detalhes da Obra" em mobile, a tabela `.od-table` (colunas Fornecedor/Referência sem largura fixa) ficava espremida a quase 0px, fazendo `word-break:break-word` quebrar cada caractere numa linha — texto vertical ilegível e colunas "Valor total"/"Rateado" somem da tela.
+    - **Correção**: adicionado `id="obraDetTableWrap"` ao wrapper da tabela e um novo container `<div class="mobile-cards" id="obraDetCards">`. Em `@media(max-width:768px)`, `#obraDetTableWrap{display:none}` esconde a tabela e `.mobile-cards{display:flex}` (regra já existente) mostra os cards. `openObraDetail()` agora também popula `#obraDetCards` reaproveitando o padrão `.lrow`/`.lrows-wrap` da lista principal (mesma bolinha colorida por fonte via `fonteKpiColor`, fornecedor, referência, badge de centro de custo, código/fonte, valor rateado em destaque, data, e tag "Total: R$ X" quando o rateado difere do valor total do lançamento).
+    - Revisão geral de responsividade (dashboard, KPIs, gráfico, lista de lançamentos, modais "Novo lançamento", "Gerenciar obras" e "Configurações") em viewport mobile (390px): tudo renderiza corretamente, nenhum outro ponto quebrado encontrado.
 
 19. **Sessão 13/06/2026 (sessão 7, parte 2) — Fontes pagadoras dinâmicas nos resultados:**
     - **Bug**: ao cadastrar uma 3ª fonte pagadora (Configurações → Fontes Pagadoras), ela não aparecia nos cards "Pago por X" nem no gráfico de pizza "Por fonte pagadora" — só as duas primeiras (`FA`/`FB`) eram exibidas, e o card "Total investido" nem somava os lançamentos dessa 3ª fonte.

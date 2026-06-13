@@ -449,6 +449,9 @@ body.viewer .tablewrap tbody td:last-child{display:none!important}
   .mobile-cards{display:flex}
   .fab{display:flex}
 
+  /* Obra-detail: cards instead of wide table */
+  #obraDetTableWrap{display:none}
+
   /* Modals → bottom sheet */
   .overlay{padding:0;align-items:flex-end}
   .modal{border-radius:22px 22px 0 0;max-width:100%!important;
@@ -686,7 +689,7 @@ body.viewer .tablewrap tbody td:last-child{display:none!important}
       <div class="od-kpis" id="obraDetKpis"></div>
       <div id="obraDetCC" style="margin-bottom:18px"></div>
       <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-family:'Archivo Narrow';font-weight:600;margin-bottom:10px">Lançamentos vinculados</div>
-      <div class="od-scroll" style="border-radius:11px;overflow-x:auto;border:1px solid var(--line);-webkit-overflow-scrolling:touch">
+      <div class="od-scroll" id="obraDetTableWrap" style="border-radius:11px;overflow-x:auto;border:1px solid var(--line);-webkit-overflow-scrolling:touch">
         <table class="od-table">
           <thead><tr>
             <th style="width:54px">ID</th>
@@ -701,6 +704,7 @@ body.viewer .tablewrap tbody td:last-child{display:none!important}
           <tbody id="obraDetTbody"></tbody>
         </table>
       </div>
+      <div class="mobile-cards" id="obraDetCards"></div>
     </div>
     <div class="modal-f"><button class="btn btn-primary" onclick="closeObraDetail()">Fechar</button></div>
   </div>
@@ -1088,6 +1092,36 @@ function openObraDetail(obraId){
           <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:var(--ochre-d);white-space:nowrap">${money(each)}</td>
         </tr>`;
       }).join('');
+
+  // Versão mobile (cards) das mesmas linhas
+  document.getElementById('obraDetCards').innerHTML = sorted.length===0
+    ? `<div class="lrow-empty"><div class="big">Nenhum lançamento</div></div>`
+    : `<div class="lrows-wrap">${sorted.map(l=>{
+        const each = valorParaObra(l, obraId);
+        const d = l.data ? l.data.slice(5).split('-').reverse().join('/') : '—';
+        const fi = FONTES.indexOf(l.fonte);
+        const dotColor = fi>=0 ? fonteKpiColor(fi) : 'var(--muted)';
+        const ccTxt = l.cc ? ccLabel(l.cc) : 'Sem categoria';
+        const ccStyle = l.cc ? ccBgStyle(l.cc) : 'background:#ece4d2;color:var(--muted)';
+        const refTxt = l.referencia ? esc(l.referencia) : '';
+        const totalTag = Math.abs(l.valor-each)>0.005 ? `<span class="lrow-tag">Total: ${money(l.valor)}</span>` : '';
+        return `<div class="lrow" onclick="openForm('${l.id}')">
+          <span class="lrow-dot" style="background:${dotColor}"></span>
+          <div class="lrow-left">
+            <div class="lrow-name">${esc(l.fornecedor)||'—'}</div>
+            ${refTxt?`<div class="lrow-ref">${refTxt}</div>`:''}
+            <div class="lrow-sub">
+              <span class="lrow-badge" style="${ccStyle}">${ccTxt}</span>
+              <span class="lrow-tag">${lancCode(l)} · ${esc(l.fonte)||'—'}</span>
+              ${totalTag}
+            </div>
+          </div>
+          <div class="lrow-right">
+            <div class="lrow-val">${money(each)}</div>
+            <div class="lrow-date">${d}</div>
+          </div>
+        </div>`;
+      }).join('')}</div>`;
 
   document.getElementById('ovObra').classList.add('show');
 }
