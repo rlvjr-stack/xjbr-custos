@@ -76,7 +76,7 @@ header{position:sticky;top:0;z-index:40;background:var(--bar);color:var(--bar-fg
 .btn-sm{padding:6px 11px;font-size:12px}
 
 /* KPI cards */
-.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:28px 0 8px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;margin:28px 0 8px}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;
   box-shadow:var(--shadow);position:relative;overflow:hidden}
 .kpi::after{content:"";position:absolute;right:-20px;top:-20px;width:80px;height:80px;border-radius:50%;
@@ -257,7 +257,7 @@ body.viewer .tablewrap tbody td:last-child{display:none!important}
 .obar{cursor:pointer;border-radius:8px;transition:.12s;padding:9px 8px}
 .obar:hover{background:var(--paper2)}
 .obar:hover .nm{color:var(--ochre-d)}
-.od-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}
+.od-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:18px}
 .od-kpi{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:13px 15px}
 .od-kpi .lab{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-family:'Archivo Narrow';font-weight:600}
 .od-kpi .val{font-family:'Fraunces',serif;font-size:22px;font-weight:600;margin-top:4px}
@@ -928,9 +928,20 @@ function renderObraFilterBar(){
 }
 
 /* ---------- KPIs + reports ---------- */
+// Cores por fonte pagadora: as duas primeiras seguem o tema (teal/ochre),
+// extras usam uma paleta fixa — assim qualquer fonte nova aparece nos resultados.
+const FONTE_HEX=['#2E6E66','#C9802B','#3F5FA8','#6B3FA8','#2E8C6A','#A0522D','#7A6FBE','#C2554F'];
+function fonteHex(i){ return FONTE_HEX[i%FONTE_HEX.length]; }
+function fonteKpiColor(i){ return i===0?'var(--teal)':i===1?'var(--ochre-d)':fonteHex(i); }
 function totals(){
-  let x=0,m=0; viewLancs.forEach(l=>{if(l.fonte===FA)x+=l.valor;else if(l.fonte===FB)m+=l.valor});
-  const t=x+m;return {x,m,t,half:t/2};
+  const porFonte={}; FONTES.forEach(f=>porFonte[f]=0);
+  let t=0;
+  viewLancs.forEach(l=>{
+    t+=l.valor;
+    if(porFonte[l.fonte]!==undefined) porFonte[l.fonte]+=l.valor;
+  });
+  const x=porFonte[FA]||0, m=porFonte[FB]||0;
+  return {x,m,t,half:t/2,porFonte};
 }
 const CC_DEFAULT=[
   {key:'OBRA',        label:'Obra',         icon:'🏗️', sub:'Materiais',  color:'#3F5FA8'},
@@ -968,10 +979,13 @@ function renderKpis(){
   const devedor = t.x<t.m? FA : (t.m<t.x?FB:'—');
   const dif=Math.abs(t.x-t.m)/2;
   const k=document.getElementById('kpis');
+  const fonteCards=FONTES.map((f,i)=>{
+    const v=t.porFonte[f]||0;
+    return `<div class="kpi"><div class="lab">Pago por ${esc(f)}</div><div class="val" style="color:${fonteKpiColor(i)}">${money(v)}</div><div class="note">${t.t?(v/t.t*100).toFixed(1):0}% do total</div></div>`;
+  }).join('');
   k.innerHTML=`
     <div class="kpi accent"><div class="lab">Total investido</div><div class="val">${money(t.t)}</div><div class="note">${state.lancamentos.length} lançamentos</div></div>
-    <div class="kpi"><div class="lab">Pago por ${esc(FA)}</div><div class="val" style="color:var(--teal)">${money(t.x)}</div><div class="note">${t.t?(t.x/t.t*100).toFixed(1):0}% do total</div></div>
-    <div class="kpi"><div class="lab">Pago por ${esc(FB)}</div><div class="val" style="color:var(--ochre-d)">${money(t.m)}</div><div class="note">${t.t?(t.m/t.t*100).toFixed(1):0}% do total</div></div>
+    ${fonteCards}
     <div class="kpi"><div class="lab">Acerto 50 / 50</div><div class="val" style="font-size:24px">${dif<0.005?'Equilibrado':money(dif)}</div>
       <div class="note">${dif<0.005?'contas igualadas':'<b>'+devedor+'</b> deve aportar para igualar'}</div></div>`;
 }
@@ -1019,19 +1033,23 @@ function openObraDetail(obraId){
   // Totais
   const totalCC={other:0};
   ccUserDefs().forEach(d=>{totalCC[d.key]=0;});
-  let totalX=0, totalM=0;
+  const porFonte={}; FONTES.forEach(f=>porFonte[f]=0);
+  let totalObra=0;
   lancs.forEach(l=>{
     const each = valorParaObra(l, obraId);
-    if(l.fonte===FA) totalX+=each; else totalM+=each;
+    totalObra+=each;
+    if(porFonte[l.fonte]!==undefined) porFonte[l.fonte]+=each;
     if(totalCC[l.cc]!==undefined) totalCC[l.cc]+=each; else totalCC.other+=each;
   });
-  const totalObra = totalX + totalM;
 
   document.getElementById('obraDetTitle').textContent = obra.nome;
+  const fonteCards=FONTES.map((f,i)=>{
+    const v=porFonte[f]||0;
+    return `<div class="od-kpi"><div class="lab">Pago por ${esc(f)}</div><div class="val" style="color:${fonteKpiColor(i)}">${money(v)}</div><div style="font-size:11px;color:var(--muted);margin-top:3px">${totalObra?(v/totalObra*100).toFixed(1):0}%</div></div>`;
+  }).join('');
   document.getElementById('obraDetKpis').innerHTML=`
     <div class="od-kpi"><div class="lab">Total gasto</div><div class="val">${money(totalObra)}</div><div style="font-size:11px;color:var(--muted);margin-top:3px">${lancs.length} lançamento(s)</div></div>
-    <div class="od-kpi"><div class="lab">Pago por ${esc(FA)}</div><div class="val" style="color:var(--teal)">${money(totalX)}</div><div style="font-size:11px;color:var(--muted);margin-top:3px">${totalObra?(totalX/totalObra*100).toFixed(1):0}%</div></div>
-    <div class="od-kpi"><div class="lab">Pago por ${esc(FB)}</div><div class="val" style="color:var(--ochre-d)">${money(totalM)}</div><div style="font-size:11px;color:var(--muted);margin-top:3px">${totalObra?(totalM/totalObra*100).toFixed(1):0}%</div></div>`;
+    ${fonteCards}`;
 
   // Painel colorido: gasto por centro de custo nesta obra
   const ccView=[...ccUserDefs().map(d=>({k:d.key,label:ccLabel(d.key),color:d.color})),{k:'other',label:'⚪ Sem categoria',color:'#A0A8B4'}];
@@ -1079,15 +1097,21 @@ let donutChart=null;
 function renderDonut(){
   const t=totals();
   const ctx=document.getElementById('donut');
-  const data=[t.x,t.m];
-  if(donutChart){donutChart.data.datasets[0].data=data;donutChart.update();}
-  else{
-    donutChart=new Chart(ctx,{type:'doughnut',data:{labels:[FA,FB],
-      datasets:[{data,backgroundColor:['#2E6E66','#C9802B'],borderColor:'#FBF8F0',borderWidth:3,hoverOffset:6}]},
+  const data=FONTES.map(f=>t.porFonte[f]||0);
+  const colors=FONTES.map((f,i)=>fonteHex(i));
+  if(donutChart){
+    donutChart.data.labels=FONTES;
+    donutChart.data.datasets[0].data=data;
+    donutChart.data.datasets[0].backgroundColor=colors;
+    donutChart.update();
+  }else{
+    donutChart=new Chart(ctx,{type:'doughnut',data:{labels:FONTES,
+      datasets:[{data,backgroundColor:colors,borderColor:'#FBF8F0',borderWidth:3,hoverOffset:6}]},
       options:{cutout:'62%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+money(c.raw)}}}}});
   }
-  document.getElementById('donutLeg').innerHTML=
-    `<span><i class="dot" style="background:#2E6E66"></i>${esc(FA)} · ${money(t.x)}</span><span><i class="dot" style="background:#C9802B"></i>${esc(FB)} · ${money(t.m)}</span>`;
+  document.getElementById('donutLeg').innerHTML=FONTES.map((f,i)=>
+    `<span><i class="dot" style="background:${fonteHex(i)}"></i>${esc(f)} · ${money(t.porFonte[f]||0)}</span>`
+  ).join('');
 }
 
 function renderCCReport(){
@@ -1660,8 +1684,9 @@ function exportExcel(){
   });
   const t=totals();
   lines.push('');lines.push('RESUMO INVESTIDORES');
-  lines.push([csvCell('Total '+FA),'',t.x.toFixed(2).replace('.',',')].join(';'));
-  lines.push([csvCell('Total '+FB),'',t.m.toFixed(2).replace('.',',')].join(';'));
+  FONTES.forEach(f=>{
+    lines.push([csvCell('Total '+f),'',(t.porFonte[f]||0).toFixed(2).replace('.',',')].join(';'));
+  });
   lines.push(['Total geral','',t.t.toFixed(2).replace('.',',')].join(';'));
   lines.push(['Saldo p/ igualar 50/50','',(Math.abs(t.x-t.m)/2).toFixed(2).replace('.',',')].join(';'));
   dl('﻿'+lines.join('\n'),'custos_xjbr.csv','text/csv;charset=utf-8');
