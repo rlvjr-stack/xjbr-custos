@@ -262,7 +262,7 @@ body.viewer .tablewrap tbody td:last-child{display:none!important}
 .od-kpi .lab{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-family:'Archivo Narrow';font-weight:600}
 .od-kpi .val{font-family:'Fraunces',serif;font-size:22px;font-weight:600;margin-top:4px}
 .od-scroll{max-width:100%}
-.od-table{width:100%;min-width:620px;table-layout:fixed;border-collapse:collapse;font-size:12.5px}
+.od-table{width:100%;min-width:690px;table-layout:fixed;border-collapse:collapse;font-size:12.5px}
 .od-table thead th{background:var(--bar);color:var(--bar-fg);text-align:left;padding:9px 12px;
   font-family:'Archivo Narrow';font-weight:600;letter-spacing:.06em;text-transform:uppercase;font-size:11px;line-height:1.2}
 .od-table tbody td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:break-word;word-break:break-word}
@@ -698,6 +698,7 @@ body.viewer .tablewrap tbody td:last-child{display:none!important}
             <th style="width:104px">Centro de Custo</th>
             <th>Fornecedor</th>
             <th>Referência</th>
+            <th style="width:64px;text-align:center">Anexo</th>
             <th style="width:96px;text-align:right">Valor total</th>
             <th style="width:96px;text-align:right">Rateado</th>
           </tr></thead>
@@ -1074,13 +1075,17 @@ function openObraDetail(obraId){
 
   const sorted = lancs.slice().sort((a,b)=>(b.numero||0)-(a.numero||0));
   document.getElementById('obraDetTbody').innerHTML = sorted.length===0
-    ? `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Nenhum lançamento</td></tr>`
+    ? `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted)">Nenhum lançamento</td></tr>`
     : sorted.map(l=>{
         const each = valorParaObra(l, obraId);
         const d = l.data ? l.data.split('-').reverse().join('/') : '—';
         const bcl = l.fonte===FA?'xjbr':l.fonte===FB?'mpi':'none';
         const ccTxt = l.cc ? ccLabel(l.cc) : '—';
         const ccStyle2 = l.cc ? ccBgStyle(l.cc) : 'background:#ece4d2;color:var(--muted)';
+        const nf = l.arquivos?l.arquivos.length:0;
+        const anexo = nf>0
+          ? `<span class="attach-badge" onclick="openFileView('${l.id}')" title="Ver ${nf} comprovante(s)">📎 ${nf}</span>`
+          : `<span style="color:var(--line2)">—</span>`;
         return `<tr>
           <td><span class="id-tag">${lancCode(l)}</span></td>
           <td style="white-space:nowrap">${d}</td>
@@ -1088,6 +1093,7 @@ function openObraDetail(obraId){
           <td><span class="badge" style="${ccStyle2}">${ccTxt}</span></td>
           <td style="font-weight:600">${esc(l.fornecedor)||'—'}</td>
           <td style="color:var(--ink2);font-size:12px;max-width:200px">${esc(l.referencia).slice(0,120)||'—'}</td>
+          <td style="text-align:center">${anexo}</td>
           <td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">${money(l.valor)}</td>
           <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:var(--ochre-d);white-space:nowrap">${money(each)}</td>
         </tr>`;
@@ -1105,6 +1111,8 @@ function openObraDetail(obraId){
         const ccStyle = l.cc ? ccBgStyle(l.cc) : 'background:#ece4d2;color:var(--muted)';
         const refTxt = l.referencia ? esc(l.referencia) : '';
         const totalTag = Math.abs(l.valor-each)>0.005 ? `<span class="lrow-tag">Total: ${money(l.valor)}</span>` : '';
+        const nf = l.arquivos?l.arquivos.length:0;
+        const anexoTag = nf>0 ? `<span class="attach-badge" onclick="event.stopPropagation();openFileView('${l.id}')" title="Ver ${nf} comprovante(s)">📎 ${nf}</span>` : '';
         return `<div class="lrow" onclick="openForm('${l.id}')">
           <span class="lrow-dot" style="background:${dotColor}"></span>
           <div class="lrow-left">
@@ -1114,6 +1122,7 @@ function openObraDetail(obraId){
               <span class="lrow-badge" style="${ccStyle}">${ccTxt}</span>
               <span class="lrow-tag">${lancCode(l)} · ${esc(l.fonte)||'—'}</span>
               ${totalTag}
+              ${anexoTag}
             </div>
           </div>
           <div class="lrow-right">
