@@ -2,7 +2,7 @@
 
 > Documento de continuidade. Resume **tudo que foi feito**, o **estado atual**, as
 > **decisões**, **senhas/credenciais**, a **estrutura de arquivos** e os **próximos passos**.
-> Última atualização: **13/06/2026 (sessão 7)** — Site publicado e ao vivo; corrigido deploy travado na Vercel (e-mail do commit), colunas faltando no banco (`rateio`, `archived`, `ended_at`), cards/gráfico de fonte pagadora agora aceitam mais de 2 fontes, e tabela "Lançamentos vinculados" do detalhe da obra corrigida em modo mobile (vira lista de cards).
+> Última atualização: **13/06/2026 (sessão 7)** — Site publicado e ao vivo; corrigido deploy travado na Vercel (e-mail do commit), colunas faltando no banco (`rateio`, `archived`, `ended_at`), cards/gráfico de fonte pagadora agora aceitam mais de 2 fontes, tabela "Lançamentos vinculados" do detalhe da obra corrigida em modo mobile (vira lista de cards), e fontes pagadoras adicionadas em Configurações agora persistem no banco (`/api/settings`).
 
 ---
 
@@ -43,6 +43,7 @@ Concepção atual: o **Dev** é o administrador central que cria e gerencia **cl
 - ✅ **Botão de tema claro/escuro** no cabeçalho (desktop) e no menu (mobile).
 - ✅ **Fontes pagadoras dinâmicas nos resultados**: cards "Pago por X" e o gráfico "Por fonte pagadora" agora mostram TODAS as fontes cadastradas (não só as 2 primeiras).
 - ✅ **Tabela "Lançamentos vinculados" responsiva**: no detalhe da obra, em telas ≤768px a tabela (que quebrava texto letra-por-letra) é substituída por uma lista de cards, igual ao padrão da lista principal de lançamentos.
+- ✅ **Fontes pagadoras persistem no banco**: salvar em Configurações grava `tenant_settings.fontes` via `PUT /api/settings` (Financeiro/Dev), não some mais ao limpar o cache.
 - ⚠️ **Pendente: rodar `supabase/schema.sql` atualizado no SQL Editor do Supabase** — adiciona as colunas `lancamentos.rateio` (jsonb) e `obras.archived`/`obras.ended_at`, que faltavam no banco e causavam erro ao salvar lançamento/arquivar obra.
 
 Para testar localmente (modo demo/offline, sem backend): `http://localhost:8123/?t=mpi` → senha `dev-master`.
@@ -169,6 +170,11 @@ XJBR-MPI/
     - **Filtro Ativas / Arquivadas / Todas**: barra aparece ao arquivar primeira obra; afeta KPIs, gráficos e tabela
     - **Obras arquivadas** não aparecem no picker de casas ao criar lançamento
     - **Painel Dev reformulado**: lista com logo em miniatura, formulário "Novo cliente" com logo (sigla ou upload de imagem), senhas com type=password
+
+21. **Sessão 13/06/2026 (sessão 7, parte 4) — Fontes pagadoras agora persistem no banco:**
+    - **Bug**: em Configurações → Fontes de Pagamento, ao adicionar uma nova fonte pagadora e salvar, a mudança só era gravada em `localStorage` (`c7_fontes_<tenant>`). Limpando o cache do navegador, `FONTES` voltava a vir de `/api/public-config` (que lê `tenant_settings.fontes`, nunca atualizado) e a fonte nova desaparecia.
+    - **Correção**: novo endpoint `PUT /api/settings` (`lib/requireUser.js` + `api/settings.js`) — Financeiro (ou Dev) autenticado grava `fontes` em `tenant_settings` do próprio parceiro. `saveSettings()` agora é assíncrona: em modo online, chama `/api/settings` com o token da sessão antes de aplicar a mudança; se falhar, mostra erro e não altera nada. Modo LOCAL/demo continua só em `localStorage`, sem chamada de rede.
+    - **Fora do escopo (notado para depois)**: a migração de lançamentos quando uma fonte é renomeada (já existia, não persiste o novo nome em `lancamentos.fonte` no banco) e os Centros de Custo (`CC_DEFS`, mesmo problema de só-localStorage, mas `tenant_settings` não tem coluna para isso ainda) seguem com a mesma limitação — não fazem parte deste fix, que tratou especificamente "fonte pagadora".
 
 20. **Sessão 13/06/2026 (sessão 7, parte 3) — Tabela "Lançamentos vinculados" responsiva no detalhe da obra:**
     - **Bug**: no modal "Detalhes da Obra" em mobile, a tabela `.od-table` (colunas Fornecedor/Referência sem largura fixa) ficava espremida a quase 0px, fazendo `word-break:break-word` quebrar cada caractere numa linha — texto vertical ilegível e colunas "Valor total"/"Rateado" somem da tela.

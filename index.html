@@ -2014,18 +2014,13 @@ function deleteCCRow(i){
   CC_DEFS=[...updated,{key:'',label:'Sem categoria',color:'#A0A8B4'}];
   renderSettingsCCList();
 }
-function saveSettings(){
+async function saveSettings(){
   // Lê fontes da lista
   const fonteInputs=[...document.querySelectorAll('#cfgFontesList [data-fonte-idx] input')];
   const newFontes=fonteInputs.map(el=>el.value.trim()).filter(Boolean);
   if(newFontes.length===0){toast('Adicione ao menos uma fonte de pagamento');return;}
   const uniq=new Set(newFontes);
   if(uniq.size!==newFontes.length){toast('As fontes precisam ter nomes diferentes');return;}
-  // Migra lançamentos se fonte foi renomeada
-  newFontes.forEach((nome,i)=>{
-    const old=FONTES[i];
-    if(old&&old!==nome) state.lancamentos.forEach(l=>{if(l.fonte===old)l.fonte=nome;});
-  });
   // Lê CCs da lista
   const rows=[...document.querySelectorAll('#cfgCCList [data-idx]')];
   const newCC=rows.map(row=>{
@@ -2035,6 +2030,25 @@ function saveSettings(){
     return {key:orig.key,icon:inputs[0].value.trim(),label:inputs[1].value.trim()||orig.label,sub:inputs[2].value.trim(),color:inputs[3].value||orig.color};
   }).filter(d=>d.key&&d.label);
   if(newCC.length===0){toast('Adicione ao menos um centro de custo');return;}
+
+  // Persiste as fontes pagadoras no banco (modo online), antes de aplicar localmente
+  if(!LOCAL){
+    try{
+      const res=await fetch('/api/settings',{
+        method:'PUT',
+        headers:Object.assign({'Content-Type':'application/json'}, await authHeader()),
+        body:JSON.stringify({fontes:newFontes})
+      });
+      const out=await res.json().catch(()=>({}));
+      if(!res.ok || out.error){ toast(out.error||'Erro ao salvar fontes pagadoras'); return; }
+    }catch(e){ toast('Erro de conexão ao salvar configurações'); return; }
+  }
+
+  // Migra lançamentos se fonte foi renomeada
+  newFontes.forEach((nome,i)=>{
+    const old=FONTES[i];
+    if(old&&old!==nome) state.lancamentos.forEach(l=>{if(l.fonte===old)l.fonte=nome;});
+  });
   FONTES=newFontes; FA=FONTES[0]||''; FB=FONTES[1]||'';
   localStorage.setItem('c7_fontes_'+TENANT, JSON.stringify(FONTES));
   if(LOCAL) localStorage.setItem('xjbr_lancs_'+TENANT, JSON.stringify(state.lancamentos));
