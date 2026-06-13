@@ -2,7 +2,7 @@
 
 > Documento de continuidade. Resume **tudo que foi feito**, o **estado atual**, as
 > **decisões**, **senhas/credenciais**, a **estrutura de arquivos** e os **próximos passos**.
-> Última atualização: **12/06/2026 (sessão 6)** — Reescrita completa de segurança: backend serverless `/api` na Vercel, `config.js` removido, segredos só em variáveis de ambiente.
+> Última atualização: **13/06/2026 (sessão 7)** — Site publicado e ao vivo; corrigido deploy travado na Vercel (e-mail do commit) e colunas faltando no banco (`rateio`, `archived`, `ended_at`).
 
 ---
 
@@ -39,8 +39,9 @@ Concepção atual: o **Dev** é o administrador central que cria e gerencia **cl
 - ✅ **Tooltip nas ações de obra** (📦 Arquivar Obra / 🗑 Excluir Obra).
 - ✅ **Rateio manual por obra**: ao criar/editar lançamento, escolha entre divisão igual ou valor manual por obra; soma deve fechar com o total; relatórios usam os valores reais.
 - ✅ **7 correções** de análise aplicadas (veja seção 8).
-- ❌ **Modo online ainda não ativado** (depende de criar projeto Supabase + variáveis de ambiente + bootstrap).
-- ❌ **Não publicado** na Vercel.
+- ✅ **Publicado** em produção na Vercel (`xjbr-custos.vercel.app`); domínio `www.xjbr.com.br` ainda não conectado.
+- ✅ **Botão de tema claro/escuro** no cabeçalho (desktop) e no menu (mobile).
+- ⚠️ **Pendente: rodar `supabase/schema.sql` atualizado no SQL Editor do Supabase** — adiciona as colunas `lancamentos.rateio` (jsonb) e `obras.archived`/`obras.ended_at`, que faltavam no banco e causavam erro ao salvar lançamento/arquivar obra.
 
 Para testar localmente (modo demo/offline, sem backend): `http://localhost:8123/?t=mpi` → senha `dev-master`.
 
@@ -166,6 +167,14 @@ XJBR-MPI/
     - **Filtro Ativas / Arquivadas / Todas**: barra aparece ao arquivar primeira obra; afeta KPIs, gráficos e tabela
     - **Obras arquivadas** não aparecem no picker de casas ao criar lançamento
     - **Painel Dev reformulado**: lista com logo em miniatura, formulário "Novo cliente" com logo (sigla ou upload de imagem), senhas com type=password
+
+18. **Sessão 13/06/2026 (sessão 7) — Publicação ao vivo e correção de colunas faltando no banco:**
+    - **Botão de tema claro/escuro**: adicionado no cabeçalho (desktop) e no menu (mobile); preferência salva em `localStorage` (`xjbr_theme`), com fallback para `prefers-color-scheme`.
+    - **Login do Dev**: `api/login.js` agora usa `DEV_PASS.trim()` para tolerar espaço/quebra de linha no valor da variável de ambiente.
+    - **Deploy travado na Vercel (causa raiz)**: o commit `089996e` tinha e-mail de autor (`xjbr@xjbr.com.br`) não vinculado à conta GitHub — a Vercel bloqueia (silenciosamente, até em deploys via CLI) qualquer deploy baseado num commit assim. Corrigido o `git config user.email` para o e-mail verificado no GitHub (`rivaldolvjr@gmail.com`) e criado um commit vazio com o e-mail correto para destravar o deploy. Site agora publicado e ao vivo.
+    - **Bug: erro ao salvar lançamento** (`Could not find the 'rateio' column of 'lancamentos' in the schema cache`): o campo `rateio` (rateio manual por obra, sessão 15) era enviado ao Supabase mas a coluna nunca existiu na tabela `lancamentos`. Adicionada `rateio jsonb` em `supabase/schema.sql` (+ `alter table ... add column if not exists` para bancos existentes) e ajustado `reload()` em `index.html` para ler `l.rateio` de volta.
+    - **Bug latente equivalente em `obras`**: `archived`/`ended_at` (sessão "Arquivar obras") também nunca existiram na tabela `obras` nem eram lidos no `reload()` — mesma classe de erro ocorreria ao arquivar uma obra em modo online. Corrigido da mesma forma (colunas + `alter table` + leitura no `reload()`).
+    - **Ação pendente do usuário**: rodar o `supabase/schema.sql` atualizado no SQL Editor do Supabase (idempotente, seguro rodar de novo) para criar as 3 colunas novas no banco em produção.
 
 17. **Sessão 12/06/2026 (sessão 6) — Reescrita completa de segurança:**
     - **Problema identificado**: `config.js` era um arquivo estático público que expunha `DEV_PASS`, `PASS_FINANCEIRO` e `PASS_VIEWER` em texto puro — qualquer visitante podia logar como `dev@xjbr.local` (acesso total cross-tenant, ignorando RLS).

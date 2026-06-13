@@ -896,11 +896,11 @@ async function loadData(){
     sb.from('lancamentos').select('*').eq('tenant',TENANT).order('numero',{ascending:true,nullsFirst:true}).order('created_at',{ascending:true})
   ]);
   if(e1||e2){toast('Erro ao carregar dados: '+((e1||e2).message));return;}
-  state.obras = (obras||[]).map(o=>({id:o.id,nome:o.nome}));
+  state.obras = (obras||[]).map(o=>({id:o.id,nome:o.nome,archived:!!o.archived,ended_at:o.ended_at||null}));
   state.lancamentos = (lancs||[]).map(l=>({
     id:l.id, numero:l.numero||null, data:l.data||'', fonte:l.fonte||'', cc:l.cc||'',
     fornecedor:l.fornecedor||'', referencia:l.referencia||'', valor:Number(l.valor)||0,
-    casas:Array.isArray(l.casas)?l.casas:[], arquivos:Array.isArray(l.arquivos)?l.arquivos:[]
+    casas:Array.isArray(l.casas)?l.casas:[], rateio:l.rateio||null, arquivos:Array.isArray(l.arquivos)?l.arquivos:[]
   }));
 }
 async function reload(){ await loadData(); render(); updateSeedBanner(); }

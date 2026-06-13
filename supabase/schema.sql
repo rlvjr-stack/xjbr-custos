@@ -28,9 +28,14 @@ create table if not exists public.obras (
   id         uuid primary key default gen_random_uuid(),
   tenant     text not null,
   nome       text not null,
+  archived   boolean not null default false,
+  ended_at   date,
   created_at timestamptz default now()
 );
 create index if not exists idx_obras_tenant on public.obras (tenant);
+-- colunas adicionadas depois da criação inicial (seguro rodar de novo):
+alter table public.obras add column if not exists archived boolean not null default false;
+alter table public.obras add column if not exists ended_at date;
 
 -- ---------------------------------------------------------------------
 -- LANÇAMENTOS  (as despesas) — por parceiro
@@ -47,12 +52,15 @@ create table if not exists public.lancamentos (
   referencia text default '',
   valor      numeric(14,2) not null default 0,
   casas      uuid[] not null default '{}',
+  rateio     jsonb,
   arquivos   jsonb  not null default '[]',
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
 create index if not exists idx_lanc_tenant on public.lancamentos (tenant);
 create index if not exists idx_lanc_casas  on public.lancamentos using gin (casas);
+-- coluna adicionada depois da criação inicial (seguro rodar de novo):
+alter table public.lancamentos add column if not exists rateio jsonb;
 
 create or replace function public.touch_updated_at()
 returns trigger language plpgsql as $$
