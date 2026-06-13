@@ -44,6 +44,7 @@ Concepção atual: o **Dev** é o administrador central que cria e gerencia **cl
 - ✅ **Fontes pagadoras dinâmicas nos resultados**: cards "Pago por X" e o gráfico "Por fonte pagadora" agora mostram TODAS as fontes cadastradas (não só as 2 primeiras).
 - ✅ **Tabela "Lançamentos vinculados" responsiva**: no detalhe da obra, em telas ≤768px a tabela (que quebrava texto letra-por-letra) é substituída por uma lista de cards, igual ao padrão da lista principal de lançamentos.
 - ✅ **Fontes pagadoras persistem no banco**: salvar em Configurações grava `tenant_settings.fontes` via `PUT /api/settings` (Financeiro/Dev), não some mais ao limpar o cache.
+- ✅ **Anexos no detalhe da obra**: a tabela "Lançamentos vinculados" (desktop e cards mobile) agora mostra o selo 📎 clicável para ver os comprovantes, igual à lista principal.
 - ⚠️ **Pendente: rodar `supabase/schema.sql` atualizado no SQL Editor do Supabase** — adiciona as colunas `lancamentos.rateio` (jsonb) e `obras.archived`/`obras.ended_at`, que faltavam no banco e causavam erro ao salvar lançamento/arquivar obra.
 
 Para testar localmente (modo demo/offline, sem backend): `http://localhost:8123/?t=mpi` → senha `dev-master`.
@@ -170,6 +171,10 @@ XJBR-MPI/
     - **Filtro Ativas / Arquivadas / Todas**: barra aparece ao arquivar primeira obra; afeta KPIs, gráficos e tabela
     - **Obras arquivadas** não aparecem no picker de casas ao criar lançamento
     - **Painel Dev reformulado**: lista com logo em miniatura, formulário "Novo cliente" com logo (sigla ou upload de imagem), senhas com type=password
+
+22. **Sessão 13/06/2026 (sessão 7, parte 5) — Anexos visíveis no detalhe da obra:**
+    - **Pedido**: na tabela "Lançamentos vinculados" do modal "Detalhes da Obra", também mostrar os comprovantes/anexos de cada lançamento, igual à lista principal.
+    - **Implementado**: nova coluna "Anexo" na tabela desktop (`#obraDetTbody`) com o selo clicável 📎 N (`attach-badge`, mesmo de `render()`), abrindo `openFileView(id)`. Nos cards mobile (`#obraDetCards`), o mesmo selo aparece nas tags do lançamento, clicável com `stopPropagation` (não abre o formulário de edição). `min-width` da `.od-table` ajustado de 620px para 690px para acomodar a coluna nova.
 
 21. **Sessão 13/06/2026 (sessão 7, parte 4) — Fontes pagadoras agora persistem no banco:**
     - **Bug**: em Configurações → Fontes de Pagamento, ao adicionar uma nova fonte pagadora e salvar, a mudança só era gravada em `localStorage` (`c7_fontes_<tenant>`). Limpando o cache do navegador, `FONTES` voltava a vir de `/api/public-config` (que lê `tenant_settings.fontes`, nunca atualizado) e a fonte nova desaparecia.
