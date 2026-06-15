@@ -2,7 +2,7 @@
 
 > Documento de continuidade. Resume **tudo que foi feito**, o **estado atual**, as
 > **decisões**, **senhas/credenciais**, a **estrutura de arquivos** e os **próximos passos**.
-> Última atualização: **13/06/2026 (sessão 7)** — Site publicado e ao vivo; corrigido deploy travado na Vercel (e-mail do commit), colunas faltando no banco (`rateio`, `archived`, `ended_at`), cards/gráfico de fonte pagadora agora aceitam mais de 2 fontes, tabela "Lançamentos vinculados" do detalhe da obra corrigida em modo mobile (vira lista de cards), e fontes pagadoras adicionadas em Configurações agora persistem no banco (`/api/settings`).
+> Última atualização: **15/06/2026 (sessão 8)** — Lançamentos (lista principal e "Lançamentos vinculados" do detalhe da obra) agora ordenados por Data por padrão, em vez de por Nº/ID, com novo seletor na barra de filtros para alternar entre "Ordenar por Data" e "Ordenar por Nº/ID".
 
 ---
 
@@ -171,6 +171,10 @@ XJBR-MPI/
     - **Filtro Ativas / Arquivadas / Todas**: barra aparece ao arquivar primeira obra; afeta KPIs, gráficos e tabela
     - **Obras arquivadas** não aparecem no picker de casas ao criar lançamento
     - **Painel Dev reformulado**: lista com logo em miniatura, formulário "Novo cliente" com logo (sigla ou upload de imagem), senhas com type=password
+
+23. **Sessão 15/06/2026 (sessão 8) — Lançamentos ordenados por Data (com opção por Nº/ID):**
+    - **Pedido**: a lista de Lançamentos (e a tabela "Lançamentos vinculados" do detalhe da obra) deve ficar sempre ordenada por **Data**, e não pelo Nº/ID — um lançamento cadastrado hoje com data antiga deve aparecer encaixado na posição cronológica correta (data maior primeiro). Adicionar também um seletor na barra de filtros para alternar entre "Ordenar por Data" e "Ordenar por Nº/ID".
+    - **Implementado**: novas funções `cmpByData` (data desc, desempate por `numero`) e `cmpById` (Nº/ID desc, comportamento anterior). `render()` agora ordena `viewLancs` com `cmpByData` por padrão, ou `cmpById` se o usuário escolher. Novo `<select id="fSort">` na barra de filtros (`#fltPanel`), com `setSortMode(v)` salvando a escolha em `localStorage` (`xjbr_sort`) e re-renderizando. A tabela "Lançamentos vinculados" do modal Detalhes da Obra (`openObraDetail`) também passou a usar `cmpByData`, sempre por data.
 
 22. **Sessão 13/06/2026 (sessão 7, parte 5) — Anexos visíveis no detalhe da obra:**
     - **Pedido**: na tabela "Lançamentos vinculados" do modal "Detalhes da Obra", também mostrar os comprovantes/anexos de cada lançamento, igual à lista principal.

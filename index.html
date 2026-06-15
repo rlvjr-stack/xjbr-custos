@@ -583,6 +583,10 @@ body.viewer .tablewrap tbody td:last-child{display:none!important}
       <select class="flt" id="fFonte" onchange="_mobilePage=_MOB_PAGE;render()"><option value="">Todas as fontes</option></select>
       <select class="flt" id="fCC" onchange="_mobilePage=_MOB_PAGE;render()"><option value="">Todos os centros</option></select>
       <select class="flt" id="fObra" onchange="_mobilePage=_MOB_PAGE;render()"></select>
+      <select class="flt" id="fSort" onchange="setSortMode(this.value)">
+        <option value="data">Ordenar por Data</option>
+        <option value="id">Ordenar por Nº/ID</option>
+      </select>
     </div>
   </div>
   <div class="tablewrap">
@@ -772,6 +776,7 @@ const money=n=>'R$ '+fmt(n);
 let state={obras:[],lancamentos:[]}, role=null, editId=null, sel=new Set(), curFonte='', curCC='', curFiles=[];
 let rateioMode='igual', curRateio={}; // rateio manual: {obraId: valor}
 let obraFilter='ativas', archivingObraId=null, admLogoBase64='', viewObras=[], viewLancs=[];
+let sortMode = (function(){ try{ return localStorage.getItem('xjbr_sort')||'data'; }catch(e){ return 'data'; } })();
 
 /* ---------- Config local (fallback offline / demo) ---------- */
 // DEMO ONLY -- usado quando /api/public-config está inacessível (preview
@@ -876,6 +881,10 @@ function canWrite(){ return role==='financeiro' || role==='dev'; }
 function obraName(id){const o=state.obras.find(o=>o.id===id);return o?o.nome:'—'}
 function lancCode(l){ return l && l.numero ? '#'+String(l.numero).padStart(3,'0') : '#'+String((l&&l.id)||'').slice(-4); }
 function nextNumero(){ return state.lancamentos.reduce((m,x)=>Math.max(m,x.numero||0),0)+1; }
+// Ordena por data (mais recente primeiro); desempate pelo Nº do lançamento
+function cmpByData(a,b){ const da=a.data||'', db=b.data||''; if(da!==db) return da>db?-1:1; return (b.numero||0)-(a.numero||0); }
+function cmpById(a,b){ return (b.numero||0)-(a.numero||0); }
+function setSortMode(v){ sortMode=v; try{localStorage.setItem('xjbr_sort',v);}catch(e){} _mobilePage=_MOB_PAGE; render(); }
 function ensureNumeros(){
   let max=state.lancamentos.reduce((m,x)=>Math.max(m,x.numero||0),0), changed=false;
   state.lancamentos.forEach(l=>{ if(!l.numero){ l.numero=++max; changed=true; } });
@@ -1074,7 +1083,7 @@ function openObraDetail(obraId){
     <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-family:'Archivo Narrow';font-weight:600;margin-bottom:10px">Gasto por centro de custo</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">${ccCards}</div>` : '';
 
-  const sorted = lancs.slice().sort((a,b)=>(b.numero||0)-(a.numero||0));
+  const sorted = lancs.slice().sort(cmpByData);
   document.getElementById('obraDetTbody').innerHTML = sorted.length===0
     ? `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted)">Nenhum lançamento</td></tr>`
     : sorted.map(l=>{
@@ -1209,7 +1218,8 @@ function render(){
   const ff=document.getElementById('fFonte').value;
   const fc=document.getElementById('fCC').value;
   const fo=document.getElementById('fObra').value;
-  let list=viewLancs.slice().reverse().filter(l=>{
+  const fSortEl=document.getElementById('fSort'); if(fSortEl) fSortEl.value=sortMode;
+  let list=viewLancs.slice().sort(sortMode==='id'?cmpById:cmpByData).filter(l=>{
     if(ff&&l.fonte!==ff)return false;
     if(fc&&l.cc!==fc)return false;
     if(fo&&!l.casas.includes(fo))return false;
