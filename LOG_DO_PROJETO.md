@@ -45,6 +45,8 @@ Concepção atual: o **Dev** é o administrador central que cria e gerencia **cl
 - ✅ **Tabela "Lançamentos vinculados" responsiva**: no detalhe da obra, em telas ≤768px a tabela (que quebrava texto letra-por-letra) é substituída por uma lista de cards, igual ao padrão da lista principal de lançamentos.
 - ✅ **Fontes pagadoras persistem no banco**: salvar em Configurações grava `tenant_settings.fontes` via `PUT /api/settings` (Financeiro/Dev), não some mais ao limpar o cache.
 - ✅ **Anexos no detalhe da obra**: a tabela "Lançamentos vinculados" (desktop e cards mobile) agora mostra o selo 📎 clicável para ver os comprovantes, igual à lista principal.
+- ✅ **Comprovante abre na frente**: ao clicar num anexo dentro do modal "Detalhes da Obra", o visualizador de comprovante abre na frente (z-index corrigido) — não mais por baixo do modal da obra.
+- ✅ **Lançamentos ordenados por Data**: padrão é "data maior no topo"; seletor "Ordenar por Data / Nº/ID" na barra de filtros; escolha salva em `localStorage`; aplica também à tabela do detalhe da obra.
 - ⚠️ **Pendente: rodar `supabase/schema.sql` atualizado no SQL Editor do Supabase** — adiciona as colunas `lancamentos.rateio` (jsonb) e `obras.archived`/`obras.ended_at`, que faltavam no banco e causavam erro ao salvar lançamento/arquivar obra.
 
 Para testar localmente (modo demo/offline, sem backend): `http://localhost:8123/?t=mpi` → senha `dev-master`.
@@ -57,6 +59,85 @@ Para testar localmente (modo demo/offline, sem backend): `http://localhost:8123/
 2. Acesse `http://localhost:8123/?t=mpi` no navegador. Use **Ctrl+Shift+R** se necessário.
 3. Tela de login → senha (ver seção 4) → Entrar.
 4. Para testar outro cliente no PC: `?t=construtorax`.
+
+---
+
+## 3b. Como transferir para outra máquina (nova instalação local)
+
+### Pré-requisitos
+| Ferramenta | Versão mínima | Observação |
+|---|---|---|
+| **Git** | qualquer | para clonar e versionar |
+| **Node.js** | v18 ou superior | para o servidor local e para as funções `/api` |
+| **npm** | incluso no Node.js | para instalar dependências |
+| **Claude Code** (CLI) | qualquer | opcional — só necessário para abrir o preview integrado via `.claude/launch.json` |
+
+### Passo a passo
+
+**1. Clonar o repositório**
+```bash
+git clone https://github.com/rlvjr-stack/xjbr-custos.git
+cd xjbr-custos
+```
+
+**2. Instalar dependências**
+```bash
+npm install
+```
+> Isso instala `@supabase/supabase-js` e `bcryptjs` (usados pelas funções `/api` na Vercel). O servidor local em si não precisa delas — mas é bom instalar para evitar avisos.
+
+**3. Iniciar o servidor local**
+
+Opção A — via Claude Code (abre automaticamente ao abrir o projeto):
+```
+O arquivo .claude/launch.json já configura a porta 8123.
+Basta abrir a pasta no Claude Code que o servidor inicia.
+```
+
+Opção B — manual, sem Claude Code:
+```bash
+node .claude/static-server.js
+```
+
+**4. Acessar no navegador**
+```
+http://localhost:8123/?t=mpi
+```
+Use **Ctrl+Shift+R** (ou Cmd+Shift+R no Mac) se a página não atualizar.
+
+**5. Login**
+- Financeiro: `classe7`
+- Dev (super-admin): `dev-master`
+- Visualizador: `ver123`
+
+> Em modo local (sem Supabase), os dados ficam só no navegador (`localStorage`). Não há conexão com o banco.
+
+---
+
+### Para também subir em produção (Vercel)
+
+**Pré-requisitos adicionais:** conta na Vercel, conta no Supabase, repositório no GitHub.
+
+**Variáveis de ambiente** a configurar na Vercel (Settings → Environment Variables):
+
+| Variável | Onde pegar |
+|---|---|
+| `SUPABASE_URL` | Supabase → Project Settings → API → Project URL |
+| `SUPABASE_ANON_KEY` | Supabase → Project Settings → API → anon/public key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → service_role key |
+| `DEV_PASS` | senha master que você quiser (ex: `minhasenha123`) |
+| `DEFAULT_TENANT` | slug do cliente padrão (ex: `mpi`) |
+| `BOOTSTRAP_TOKEN` | qualquer string aleatória, usada uma única vez |
+
+**Fluxo completo:**
+1. Criar projeto no Supabase (região South America São Paulo)
+2. Rodar `supabase/schema.sql` no SQL Editor do Supabase
+3. Conectar o repo GitHub na Vercel e configurar as variáveis acima
+4. Fazer um push/deploy
+5. Chamar `POST https://seu-dominio.vercel.app/api/admin/bootstrap` com `Authorization: Bearer <BOOTSTRAP_TOKEN>` para criar o primeiro parceiro e a conta Dev — **só precisa fazer isso uma vez**
+6. Entrar com a senha `DEV_PASS` → botão 🛠 Admin → criar clientes, logos e senhas
+
+> Veja também `GUIA_DE_INSTALACAO.md` (passo a passo detalhado) e `TUTORIAL_COLOCAR_ONLINE.pdf` (tutorial em PDF).
 
 ---
 
@@ -99,12 +180,14 @@ XJBR-MPI/
 ├── api/
 │   ├── public-config.js             ← config pública (anon key + lista de parceiros)
 │   ├── login.js                     ← verifica senha no servidor, devolve sessão
+│   ├── settings.js                  ← PUT /api/settings — grava fontes pagadoras no banco (sessão 7, parte 4)
 │   └── admin/
 │       ├── tenants.js               ← CRUD de parceiros (só Dev, via Bearer token)
 │       └── bootstrap.js             ← inicialização única (1º parceiro + conta Dev)
 ├── lib/
 │   ├── supabaseAdmin.js             ← cliente Supabase com service_role
 │   ├── requireDev.js                ← valida que o usuário logado é "dev"
+│   ├── requireUser.js               ← valida usuário autenticado (qualquer perfil) — adicionado sessão 7, parte 4
 │   └── tenantCrud.js                ← cria/edita contas e senhas de parceiros
 ├── vercel.json                      ← roteamento /mpi, /construtorax, /api na Vercel
 ├── package.json / package-lock.json ← dependências (@supabase/supabase-js, bcryptjs)
@@ -129,11 +212,13 @@ XJBR-MPI/
 - Gráficos: gasto por obra (barras por CC) e donut por fonte pagadora
 - Painel "Por centro de custo"
 - Tabela de lançamentos com ID (`#001`), filtros e coluna Anexo (📎)
+- **Ordenação da tabela**: padrão por Data (mais recente no topo); seletor "Ordenar por Data / Nº/ID" na barra de filtros; escolha persiste em `localStorage`
 - Formulário de lançamento com campo R$ dinâmico, data obrigatória, upload de comprovantes
 - **Arquivar obras** — com data de término, seção separada no modal, botão reativar
 - **Filtro Ativas / Arquivadas / Todas** — afeta KPIs, gráficos e tabela; aparece automaticamente quando há obra arquivada
 - **Gerenciador de obras** — obras arquivadas não aparecem no picker de novas despesas
-- Detalhe da obra (modal) com KPIs, painel por CC e tabela responsiva
+- Detalhe da obra (modal) com KPIs, painel por CC e tabela responsiva (ordenada por data)
+- **Comprovantes no detalhe da obra**: selo 📎 clicável na tabela de lançamentos vinculados; visualizador abre na frente do modal da obra (z-index)
 - Exportar Excel/CSV · Backup/Importar JSON (com aviso de ambiente no import)
 - Login por senha (3 perfis) com identificação de ambiente no header (`/mpi`)
 - **Painel Dev** (🛠 Admin):
@@ -176,9 +261,11 @@ XJBR-MPI/
     - **Pedido**: a lista de Lançamentos (e a tabela "Lançamentos vinculados" do detalhe da obra) deve ficar sempre ordenada por **Data**, e não pelo Nº/ID — um lançamento cadastrado hoje com data antiga deve aparecer encaixado na posição cronológica correta (data maior primeiro). Adicionar também um seletor na barra de filtros para alternar entre "Ordenar por Data" e "Ordenar por Nº/ID".
     - **Implementado**: novas funções `cmpByData` (data desc, desempate por `numero`) e `cmpById` (Nº/ID desc, comportamento anterior). `render()` agora ordena `viewLancs` com `cmpByData` por padrão, ou `cmpById` se o usuário escolher. Novo `<select id="fSort">` na barra de filtros (`#fltPanel`), com `setSortMode(v)` salvando a escolha em `localStorage` (`xjbr_sort`) e re-renderizando. A tabela "Lançamentos vinculados" do modal Detalhes da Obra (`openObraDetail`) também passou a usar `cmpByData`, sempre por data.
 
-22. **Sessão 13/06/2026 (sessão 7, parte 5) — Anexos visíveis no detalhe da obra:**
-    - **Pedido**: na tabela "Lançamentos vinculados" do modal "Detalhes da Obra", também mostrar os comprovantes/anexos de cada lançamento, igual à lista principal.
-    - **Implementado**: nova coluna "Anexo" na tabela desktop (`#obraDetTbody`) com o selo clicável 📎 N (`attach-badge`, mesmo de `render()`), abrindo `openFileView(id)`. Nos cards mobile (`#obraDetCards`), o mesmo selo aparece nas tags do lançamento, clicável com `stopPropagation` (não abre o formulário de edição). `min-width` da `.od-table` ajustado de 620px para 690px para acomodar a coluna nova.
+22. **Sessão 13/06/2026 (sessão 7, partes 5 e 6) — Anexos no detalhe da obra + z-index:**
+    - **Pedido (parte 5)**: na tabela "Lançamentos vinculados" do modal "Detalhes da Obra", também mostrar os comprovantes/anexos de cada lançamento, igual à lista principal.
+    - **Implementado (parte 5)**: nova coluna "Anexo" na tabela desktop (`#obraDetTbody`) com o selo clicável 📎 N (`attach-badge`, mesmo de `render()`), abrindo `openFileView(id)`. Nos cards mobile (`#obraDetCards`), o mesmo selo aparece nas tags do lançamento, clicável com `stopPropagation` (não abre o formulário de edição). `min-width` da `.od-table` ajustado de 620px para 690px para acomodar a coluna nova.
+    - **Pedido (parte 6)**: ao clicar num anexo dentro da modal "Detalhes da Obra", o visualizador de comprovante abria por baixo da modal da obra, obrigando a fechar a obra para ver o arquivo.
+    - **Correção (parte 6)**: adicionado `#ovFile { z-index: 95 }` no CSS — o visualizador de arquivos (`#ovFile`, z-index 95) agora fica na frente da modal da obra (`#ovObra`, z-index implícito menor). Commit `03e2993`.
 
 21. **Sessão 13/06/2026 (sessão 7, parte 4) — Fontes pagadoras agora persistem no banco:**
     - **Bug**: em Configurações → Fontes de Pagamento, ao adicionar uma nova fonte pagadora e salvar, a mudança só era gravada em `localStorage` (`c7_fontes_<tenant>`). Limpando o cache do navegador, `FONTES` voltava a vir de `/api/public-config` (que lê `tenant_settings.fontes`, nunca atualizado) e a fonte nova desaparecia.
@@ -309,3 +396,6 @@ Seguir o **`GUIA_DE_INSTALACAO.md`** (4 etapas):
 - **Logo por cliente**: salva em `tcfg.logo = {type: 'sigla'|'image', value: string}`. Renderizada por `applyLogoEl()` no header e na tela de login.
 - Online: tabelas `obras`/`lancamentos` têm coluna `tenant`; isolamento por RLS via `user_tenant()`/`user_role()`.
 - Comprovantes online: bucket `comprovantes`, arquivos na pasta `<tenant>/`.
+- **Ordenação da tabela de lançamentos**: variável global `sortMode` ('data'|'id'), persistida em `localStorage` (`xjbr_sort`). Funções `cmpByData()` (data desc, desempate por `numero`) e `cmpById()` (numero desc). Seletor `#fSort` na barra de filtros sincroniza via `setSortMode(v)`.
+- **Fontes pagadoras** (persistência online): `PUT /api/settings` com Bearer token da sessão grava `tenant_settings.fontes`. `lib/requireUser.js` valida token de qualquer perfil (não só Dev). Em modo LOCAL, continua só `localStorage`.
+- **Z-index dos modais**: `#ovObra` (detalhe da obra) fica abaixo de `#ovFile` (visualizador de comprovante, z-index 95) e de `#ov` (formulário de lançamento). Qualquer novo modal deve ter z-index maior que 95 para sobrepor o visualizador.
